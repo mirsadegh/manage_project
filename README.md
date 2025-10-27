@@ -1,4 +1,4 @@
-# Your Project Name
+# manage_project
 
 Brief description of your Django project.
 
