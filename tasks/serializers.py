@@ -22,6 +22,10 @@ class TaskListSerializer(serializers.ModelSerializer):
         model = TaskList
         fields = ['id', 'name', 'description', 'position', 'task_count', 'created_at']
         read_only_fields = ['id', 'created_at']
+        
+    def get_task_count(self, obj):
+        return obj.tasks.count()
+    
 
 
 class TaskSerializer(serializers.ModelSerializer):

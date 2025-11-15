@@ -9,6 +9,8 @@ from .serializers import (
     ProjectCreateSerializer,
     ProjectMemberSerializer
 )
+from django.db.models import Q
+
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
@@ -38,10 +40,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         # Users see projects they own, manage, or are members of
         return Project.objects.filter(
-            models.Q(owner=user) |
-            models.Q(manager=user) |
-            models.Q(members__user=user) |
-            models.Q(is_public=True)
+            Q(owner=user) |
+            Q(manager=user) |
+            Q(members__user=user) |
+            Q(is_public=True)
         ).distinct()
     
     def perform_create(self, serializer):
@@ -85,9 +87,4 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {'error': 'Member not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-
-
-
-
-
 

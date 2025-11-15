@@ -12,10 +12,10 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'role', 'phone_number', 'job_title', 'department',
-            'profile_picture', 'is_available', 'data_joined'
+            'profile_picture', 'is_available', 'date_joined'
         ]
         
-        read_only_fields = ['id','data_joined']
+        read_only_fields = ['id','date_joined']
         
  
 class UserDetailSerializer(serializers.ModelSerializer):
@@ -34,8 +34,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id','date_joined', 'updated_at']
         
-        def get_full_name(self, obj):
-            return obj.get_full_name()
+    def get_full_name(self, obj):
+        return obj.get_full_name()
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -56,17 +56,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         ]
         
     def validate(self, attrs):
-        if attrs['password'] != attrs['password@']:
+        if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({
-                "password": "Password fields didn't mathc."
+                "password": "Password fields didn't match."
             })
-            
-            return attrs
-        
+        return attrs
+             
     def create(self, validated_data):
         validated_data.pop('password2')
         user = CustomUser.objects.create_user(**validated_data) 
         return user
+  
     
 class ChangePasswordSerializer(serializers.Serializer):
     """Change password serialzer"""

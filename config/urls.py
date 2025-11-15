@@ -15,7 +15,7 @@ urlpatterns = [
     
     # API endpoints
     path('api/accounts/', include('accounts.urls')),
-    path('api/projects/', include('projects.urls')),
+    path('api/', include('projects.urls')),
     path('api/tasks/', include('tasks.urls')),
     
     # API Documentation
