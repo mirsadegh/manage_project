@@ -11,6 +11,16 @@ from .serializers import (
     ChangePasswordSerializer
 )
 
+from .permissions import IsOwnerOrReadOnly, IsAdminOrManager, IsAdmin
+from config.pagination import StandardResultsSetPagination
+
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from config.throttling import LoginRateThrottle
+
+
+
+
 User = get_user_model()
 
 
@@ -23,12 +33,33 @@ class RegisterView(generics.CreateAPIView):
 
 class UserViewSet(viewsets.ModelViewSet):
     """User CRUD operations"""
-    queryset = User.objects.all()
+    queryset = CustomUser.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filterset_fields = ['role', 'department', 'is_available']
     search_fields = ['username', 'email', 'first_name', 'last_name', 'job_title']
     ordering_fields = ['date_joined', 'username']
+    
+    def get_permissions(self):
+        """
+        Custom permissions based on action.
+        """
+        if self.action == 'list':
+            # Anyone authenticated can list users
+            permission_classes = [permissions.IsAuthenticated]
+        elif self.action == 'retrieve':
+            # Anyone authenticated can view user details
+            permission_classes = [permissions.IsAuthenticated]
+        elif self.action in ['me', 'change_password']:
+            # User can update their own profile
+            permission_classes = [permissions.IsAuthenticated]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
+            # Only admins can create/update/delete users
+            permission_classes = [IsAdmin]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        
+        return [permission() for permission in permission_classes]
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -67,8 +98,36 @@ class UserViewSet(viewsets.ModelViewSet):
         user.set_password(serializer.validated_data['new_password'])
         user.save()
         
-        return Response({'message': 'Password updated successfully'})
+        return Response({'message': 'Password updated successfully'})  
     
-    
-    
-    
+ 
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Custom token serializer to add extra user data to token response.
+    """
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        
+        # Add custom claims
+        data['user'] = {
+            'id': self.user.id,
+            'username': self.user.username,
+            'email': self.user.email,
+            'role': self.user.role,
+            'full_name': self.user.get_full_name(),
+        }
+        
+        return data
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """
+    Custom login view with rate limiting.
+    """
+    serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
+ 
+ 
+ 
+ 

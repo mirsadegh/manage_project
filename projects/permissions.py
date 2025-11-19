@@ -78,7 +78,58 @@ class CanManageProjectMembers(permissions.BasePermission):
 
 
 
+class CanModifyCompletedProject(permissions.BasePermission):
+    """
+    Permission to prevent modifying completed projects.
+    Only admins can modify completed projects.
+    """
+    
+    message = "Cannot modify completed projects. Contact an administrator if changes are needed."
+    
+    def has_object_permission(self, request, view, obj):
+        project = obj if hasattr(obj, 'status') else obj.project
+        
+        # Allow read operations
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        # If project is completed, only admin can modify
+        if project.status == 'COMPLETED':
+            return request.user.role == 'ADMIN' or request.user.is_superuser
+        
+        # If project is cancelled, only admin can modify
+        if project.status == 'CANCELLED':
+            return request.user.role == 'ADMIN' or request.user.is_superuser
+        
+        return True
 
+
+class CanDeleteProject(permissions.BasePermission):
+    """
+    Permission for project deletion.
+    Only owner or admin can delete, and only if no tasks exist.
+    """
+    
+    def has_object_permission(self, request, view, obj):
+        project = obj
+        
+        # Only DELETE method
+        if request.method != 'DELETE':
+            return True
+        
+        # Check if user is owner or admin
+        if not (project.owner == request.user or 
+                request.user.role == 'ADMIN' or 
+                request.user.is_superuser):
+            self.message = "Only project owner or admin can delete projects."
+            return False
+        
+        # Check if project has tasks
+        if project.tasks.exists():
+            self.message = "Cannot delete project with existing tasks. Delete or move tasks first."
+            return False
+        
+        return True
 
 
 
