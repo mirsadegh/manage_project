@@ -173,32 +173,6 @@ class CanModifyBlockedTask(permissions.BasePermission):
         return True
 
 
-class CanModifyBlockedTask(permissions.BasePermission):
-    """
-    Permission to handle blocked tasks.
-    Regular users can't modify blocked tasks.
-    """
-    
-    message = "This task is blocked. Resolve blockers first or contact project manager."
-    
-    def has_object_permission(self, request, view, obj):
-        task = obj
-        
-        # Allow read operations
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        
-        # If task is blocked, only PM or admin can modify
-        if task.status == 'BLOCKED':
-            return (
-                request.user.role in ['ADMIN', 'PM'] or
-                request.user.is_superuser or
-                task.project.owner == request.user or
-                task.project.manager == request.user
-            )
-        
-        return True
-
 class CanModifyCompletedTask(permissions.BasePermission):
     """
     Permission to prevent modifying completed tasks.
@@ -257,6 +231,7 @@ class CanDeleteTask(permissions.BasePermission):
         return True   
 
 
+
 class CanReassignTask(permissions.BasePermission):
     """
     Permission for reassigning tasks.
@@ -279,4 +254,8 @@ class CanReassignTask(permissions.BasePermission):
             task.project.owner == request.user or
             task.project.manager == request.user or
             task.created_by == request.user
-        )        
+        )  
+        
+        
+        
+              

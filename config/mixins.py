@@ -92,26 +92,3 @@ class ProjectAccessMixin:
         )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

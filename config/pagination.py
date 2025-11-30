@@ -1,5 +1,3 @@
-# project_management/pagination.py
-
 from rest_framework.pagination import PageNumberPagination, LimitOffsetPagination, CursorPagination
 from rest_framework.response import Response
 from collections import OrderedDict
@@ -70,12 +68,19 @@ class TaskPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
     max_page_size = 100
-    
+
     def get_paginated_response(self, data):
-        # Calculate task statistics
+        # Calculate task statistics using single aggregation query for better performance
         from tasks.models import Task
-        all_tasks = Task.objects.all()
-        
+        from django.db.models import Count, Q
+
+        stats = Task.objects.aggregate(
+            total_tasks=Count('id'),
+            completed_tasks=Count('id', filter=Q(status='COMPLETED')),
+            in_progress_tasks=Count('id', filter=Q(status='IN_PROGRESS')),
+            todo_tasks=Count('id', filter=Q(status='TODO')),
+        )
+
         return Response({
             'pagination': {
                 'count': self.page.paginator.count,
@@ -85,12 +90,7 @@ class TaskPagination(PageNumberPagination):
                 'next': self.get_next_link(),
                 'previous': self.get_previous_link(),
             },
-            'statistics': {
-                'total_tasks': all_tasks.count(),
-                'completed_tasks': all_tasks.filter(status='COMPLETED').count(),
-                'in_progress_tasks': all_tasks.filter(status='IN_PROGRESS').count(),
-                'todo_tasks': all_tasks.filter(status='TODO').count(),
-            },
+            'statistics': stats,
             'tasks': data
         })
 

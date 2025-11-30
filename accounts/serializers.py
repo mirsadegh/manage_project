@@ -1,5 +1,3 @@
-from dataclasses import fields
-from pyexpat import model
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from .models import CustomUser
