@@ -166,23 +166,24 @@ class ProjectViewSet(viewsets.ModelViewSet):
             
     @action(detail=True, methods=['get'])
     def statistics(self, request, slug=None):
-        """Get project statistics"""
+        """Get project statistics using optimized single query."""
         project = self.get_object()
-        
+
+        # Use optimized aggregation method (single query instead of 6+)
+        task_stats = project.get_task_statistics()
+
         stats = {
-            'total_tasks': project.tasks.count(),
-            'completed_tasks': project.tasks.filter(status='COMPLETED').count(),
-            'in_progress_tasks': project.tasks.filter(status='IN_PROGRESS').count(),
-            'todo_tasks': project.tasks.filter(status='TODO').count(),
-            'blocked_tasks': project.tasks.filter(status='BLOCKED').count(),
-            'overdue_tasks': project.tasks.filter(
-                due_date__lt=models.functions.Now(),
-                status__in=['TODO', 'IN_PROGRESS']
-            ).count(),
+            'total_tasks': task_stats['total'],
+            'completed_tasks': task_stats['completed'],
+            'in_progress_tasks': task_stats['in_progress'],
+            'todo_tasks': task_stats['todo'],
+            'blocked_tasks': task_stats['blocked'],
+            'in_review_tasks': task_stats['in_review'],
+            'overdue_tasks': task_stats['overdue'],
             'total_members': project.members.count(),
         }
-        
-        return Response(stats)  
+
+        return Response(stats)
     
     
     @action(detail=True, methods=['post'])

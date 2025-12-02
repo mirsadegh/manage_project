@@ -127,6 +127,8 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
     
+    
+    
     @action(detail=True, methods=['post'])
     def change_status(self, request, pk=None):
         """Change task status"""
