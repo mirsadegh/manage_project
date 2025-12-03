@@ -21,7 +21,7 @@ from .permissions import (
 )
 
 from config.pagination import ProjectPagination
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
 from config.mixins import ProjectAccessMixin
 from config.throttling import ProjectCreationThrottle
@@ -72,22 +72,30 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """Filter projects user has access to"""
         user = self.request.user
         
+        base_qs = Project.objects.all()
+        
+        # Annotate task stats for list pagination to avoid N+1
+        if self.action == 'list':
+            from tasks.models import Task
+            base_qs = base_qs.annotate(
+                total_tasks=Count('tasks'),
+                completed_tasks=Count('tasks', filter=Q(tasks__status=Task.Status.COMPLETED))
+            )
+        
         # Superusers see all projects
-        if user.is_superuser  or getattr(user, 'role', None) == 'ADMIN':
-            return Project.objects.all()
-        
-        
+        if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
+            return base_qs
         
         # Users see projects they own, manage, or are members of
         if self.action in ['list', 'retrieve']:
-            return Project.objects.filter(
+            return base_qs.filter(
                 Q(owner=user) |
                 Q(manager=user) |
                 Q(members__user=user) |
                 Q(is_public=True)
             ).distinct()
             
-        return Project.objects.all()    
+        return base_qs
     
     
     def get_object(self):
@@ -293,7 +301,4 @@ class ProjectViewSet(viewsets.ModelViewSet):
         else:
             throttle_classes = self.throttle_classes
         
-        return [throttle() for throttle in throttle_classes]    
-        
-        
-            
+        return [throttle() for throttle in throttle_classes]
