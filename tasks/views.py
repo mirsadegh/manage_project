@@ -38,14 +38,27 @@ class TaskListViewSet(viewsets.ModelViewSet):
 
 
 class TaskViewSet(viewsets.ModelViewSet):
-    """Task CRUD operations"""
+    """
+    Task CRUD operations
+
+    This class-based view provides functionality for creating, reading, updating, and deleting tasks.
+    It utilizes Django Rest Framework's ModelViewSet to handle these operations.
+
+    Attributes:
+        queryset (Task.objects.all()): A queryset containing all tasks.
+        pagination_class (TaskPagination): The pagination class used for paginating tasks.
+        filter_backends ([DjangoFilterBackend]): A list of filter backends used for filtering tasks.
+        filterset_fields (['project', 'task_list', 'status', 'priority', 'assignee']): A list of fields that can be used for filtering tasks.
+        search_fields (['title', 'description']): A list of fields that can be used for searching tasks.
+        ordering_fields (['created_at', 'due_date', 'priority', 'position']): A list of fields that can be used for ordering tasks.
+
+    """
     queryset = Task.objects.all()
     pagination_class = TaskPagination
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['project', 'task_list', 'status', 'priority', 'assignee']
     search_fields = ['title', 'description']
     ordering_fields = ['created_at', 'due_date', 'priority', 'position']
-   
    
     def get_permissions(self):
         """Custom permissions based on action."""
@@ -92,7 +105,15 @@ class TaskViewSet(viewsets.ModelViewSet):
         ).distinct()
     
     def perform_create(self, serializer):
-        """Set current user as task creator"""
+        """
+        Called when a new Task instance is created via this viewset.
+
+        This method sets the 'created_by' field of the Task to the current user
+        making the request, ensuring that the creator of the task is recorded.
+
+        Args:
+            serializer: The serializer instance containing validated data for the new Task.
+        """
         serializer.save(created_by=self.request.user)
     
     @action(detail=True, methods=['post'])
@@ -144,8 +165,8 @@ class TaskViewSet(viewsets.ModelViewSet):
         
         # حالا permission را چک کن (CanChangeTaskStatus)
         self.check_object_permissions(request, task)
-        
-        # بقیه کد...
+
+
         new_status = request.data.get('status')
         
         if new_status not in dict(Task.Status.choices):
@@ -235,21 +256,42 @@ class TaskViewSet(viewsets.ModelViewSet):
     @require_task_assignee
     def log_time(self, request, pk=None, task=None):
         """
-        Log time spent on task - only assignee.
+        Log time spent on task - only assignee can log time.
+
+        This endpoint allows the task assignee to log time spent working on a task.
+        It accepts a POST request with an 'hours' parameter specifying the time spent.
+        The hours are added to the task's actual_hours field, which accumulates
+        total time spent on the task. The decorator @require_task_assignee ensures
+        only the assigned user can log time for the task.
+
+        Parameters:
+        - hours (float): Number of hours spent on the task (required)
+
+        Returns:
+        - Success: Message with logged hours and updated total hours
+        - Error: 400 if hours not provided or invalid
         """
         hours = request.data.get('hours')
-        
+
         if not hours:
             return Response(
                 {'error': 'Hours required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        task.actual_hours = (task.actual_hours or 0) + float(hours)
+
+        try:
+            hours_float = float(hours)
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Invalid hours value'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        task.actual_hours = (task.actual_hours or 0) + hours_float
         task.save()
-        
+
         return Response({
-            'message': f'Logged {hours} hours',
+            'message': f'Logged {hours_float} hours',
             'total_hours': task.actual_hours
         })
     
@@ -258,44 +300,66 @@ class TaskViewSet(viewsets.ModelViewSet):
     def bulk_assign(self, request):
         """
         Bulk assign tasks to users - only managers.
+
+        This endpoint allows administrators (ADMIN), project managers (PM), and team leads (TL) 
+        to assign multiple tasks to a single user in one operation. The endpoint expects:
+        - task_ids: List of task IDs to be assigned (required)
+        - assignee_id: The ID of the user to assign tasks to (required)
+
+        Returns:
+        - Success: Message with count of updated tasks and assignee username
+        - Error: 400 if required parameters missing, 404 if user not found
         """
+        # Extract task IDs and assignee ID from request data
         task_ids = request.data.get('task_ids', [])
         assignee_id = request.data.get('assignee_id')
-        
+
+        # Validate required parameters
         if not task_ids or not assignee_id:
             return Response(
                 {'error': 'task_ids and assignee_id required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+        # Import user model dynamically
         from accounts.models import CustomUser
-        
+
         try:
+            # Fetch target user by ID
             assignee = CustomUser.objects.get(id=assignee_id)
         except CustomUser.DoesNotExist:
             return Response(
                 {'error': 'User not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
+
+        # Update all matching tasks with new assignee
         tasks = Task.objects.filter(id__in=task_ids)
         updated_count = tasks.update(assignee=assignee)
-        
+
+        # Return success response with operation details
         return Response({
             'message': f'Assigned {updated_count} tasks to {assignee.username}',
             'updated_tasks': updated_count
-        })       
-    
+        })
     
     
     
 class TaskLabelViewSet(viewsets.ModelViewSet):
-    """Task label CRUD operations"""
+    """
+    TaskLabel ViewSet for managing task labels within projects.
+    This ViewSet provides CRUD operations for TaskLabel objects, allowing users to:
+    - Create new labels for projects - List all available labels (can be filtered by project)
+    - Retrieve, update, or delete specific labels By default, only authenticated users can access these endpoints.
+    Labels can be filtered by project using the 'project' query parameter.
+    Example usage:
+    - GET /api/labels/ - List all labels - GET /api/labels/?project=1 - List labels for project with ID1 - POST /api/labels/ - Create a new label - PUT /api/labels/{id}/ - Update a label - DELETE /api/labels/{id}/ - Delete a label """
     queryset = TaskLabel.objects.all()
-    serializer_class = TaskLabelSerializer
+    serializer_class = TaskLabelSerializer 
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['project']
     
-    
+       
+   
     
     
