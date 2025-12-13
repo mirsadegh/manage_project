@@ -15,4 +15,4 @@ class AttachmentAdmin(admin.ModelAdmin):
     
     def file_size_mb(self, obj):
         return f"{obj.file_size_mb} MB"
-    file_size_mb.short_description = 'File Size'c
+    file_size_mb.short_description = 'File Size'

@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
+import sys
 from pathlib import Path
 from datetime import timedelta
 
@@ -86,11 +87,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',  # Development only
-    
     # Custom middleware
     'config.middleware.PermissionLoggingMiddleware',
 ]
+
+# Add debug toolbar only in development (not testing)
+if not 'test' in sys.argv:
+    MIDDLEWARE.append('debug_toolbar.middleware.DebugToolbarMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 
@@ -302,6 +305,15 @@ CACHES = {
         'TIMEOUT': 300,  # 5 minutes default
     }
 }
+
+# Use simple cache for testing
+if 'test' in sys.argv:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'test-cache',
+        }
+    }
 
 # Channels Configuration (WebSockets)
 CHANNEL_LAYERS = {
