@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from notifications.utils import send_realtime_notification, broadcast_project_update
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Task, TaskList, TaskLabel
 from .serializers import (
@@ -114,7 +115,31 @@ class TaskViewSet(viewsets.ModelViewSet):
         Args:
             serializer: The serializer instance containing validated data for the new Task.
         """
-        serializer.save(created_by=self.request.user)
+        task = serializer.save(created_by=self.request.user)
+        
+        if task.assignee:
+            notification_data = {
+                'type': 'TASK_ASSIGNED',
+                'title': 'New Task Assigned',
+                'message': f'You have been assigned to task "{task.title}"',
+                'task_id': task.id,
+                'project_slug': task.project.slug
+            }
+            send_realtime_notification(task.assignee, notification_data)
+        
+        # Broadcast to all project watchers
+        update_data = {
+            'task_id': task.id,
+            'task_title': task.title,
+            'status': task.status,
+            'assignee': task.assignee.username if task.assignee else None,
+            'created_by': task.created_by.username
+        }
+        broadcast_project_update(task.project.slug, 'task_update', update_data)
+        
+        
+        
+        
     
     @action(detail=True, methods=['post'])
     def assign(self, request, pk=None):
@@ -152,21 +177,8 @@ class TaskViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def change_status(self, request, pk=None):
-        """Change task status"""
-        
-        # ابتدا تسک را بدون فیلتر queryset پیدا کن
-        try:
-            task = Task.objects.get(pk=pk)
-        except Task.DoesNotExist:
-            return Response(
-                {'error': 'Task not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # حالا permission را چک کن (CanChangeTaskStatus)
-        self.check_object_permissions(request, task)
-
-
+        """Change task status and broadcast update"""
+        task = self.get_object()
         new_status = request.data.get('status')
         
         if new_status not in dict(Task.Status.choices):
@@ -175,6 +187,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        old_status = task.status
         task.status = new_status
         
         # Set completed_at when marking as completed
@@ -182,9 +195,30 @@ class TaskViewSet(viewsets.ModelViewSet):
             from django.utils import timezone
             task.completed_at = timezone.now()
         elif task.completed_at and new_status != Task.Status.COMPLETED:
-            task.completed_at = None    
+            task.completed_at = None
         
         task.save()
+        
+        # Notify task creator if status changed
+        if task.created_by != request.user:
+            notification_data = {
+                'type': 'STATUS_CHANGE',
+                'title': 'Task Status Changed',
+                'message': f'Task "{task.title}" status changed from {old_status} to {new_status}',
+                'task_id': task.id
+            }
+            send_realtime_notification(task.created_by, notification_data)
+        
+        # Broadcast to project
+        update_data = {
+            'task_id': task.id,
+            'task_title': task.title,
+            'old_status': old_status,
+            'new_status': new_status,
+            'updated_by': request.user.username
+        }
+        broadcast_project_update(task.project.slug, 'task_update', update_data)
+        
         serializer = self.get_serializer(task)
         return Response(serializer.data)
     
@@ -355,7 +389,7 @@ class TaskLabelViewSet(viewsets.ModelViewSet):
     Example usage:
     - GET /api/labels/ - List all labels - GET /api/labels/?project=1 - List labels for project with ID1 - POST /api/labels/ - Create a new label - PUT /api/labels/{id}/ - Update a label - DELETE /api/labels/{id}/ - Delete a label """
     queryset = TaskLabel.objects.all()
-    serializer_class = TaskLabelSerializer 
+    serializer_class = TaskLabelSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['project']
     

@@ -5,7 +5,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 # Set default Django settings
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'project_management.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 # Create Celery app
 app = Celery('project_management')

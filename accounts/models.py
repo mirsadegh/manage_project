@@ -100,6 +100,12 @@ class CustomUser(AbstractUser):
         verbose_name = 'User'
         verbose_name_plural = 'Users'
         ordering = ['-date_joined']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(hourly_rate__isnull=True) | models.Q(hourly_rate__gte=0),
+                name='user_hourly_rate_positive'
+            ),
+        ]
         
     def __str__(self):
         return f"{self.get_full_name()} ({self.role})"

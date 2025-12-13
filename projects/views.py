@@ -31,6 +31,8 @@ from config.decorators import (
     require_project_member,
     require_role
 )
+from notifications.utils import notify_project_members, broadcast_project_update
+from django.utils import timezone
 
 class ProjectViewSet(viewsets.ModelViewSet):
     """Project CRUD operations"""
@@ -146,9 +148,38 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        serializer.save(project=project)
+        member = serializer.save(project=project)
+          # Notify the new member
+        notification_data = {
+            'type': 'PROJECT_INVITE',
+            'title': 'Added to Project',
+            'message': f'You have been added to project "{project.name}"',
+            'project_slug': project.slug
+        }
+        # Import here to avoid circular imports
+        from notifications.utils import send_realtime_notification
+        send_realtime_notification(member.user, notification_data)
+        
+        # Notify existing members
+        notify_project_members(
+            project,
+            'MEMBER_JOINED',
+            'New Member',
+            f'{member.user.get_full_name()} joined the project'
+        )
+        
+        # Broadcast to project watchers
+        update_data = {
+            'member_id': member.id,
+            'member_name': member.user.get_full_name(),
+               'member_role': member.role
+        }
+        broadcast_project_update(project.slug, 'member_joined', update_data)
+        
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
+        
+        
+        
     @action(detail=True, methods=['delete'], url_path='remove_member/(?P<member_id>[^/.]+)')
     def remove_member(self, request, slug=None, member_id=None):
         """Remove member from project"""
