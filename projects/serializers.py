@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import Project, ProjectMember
 from accounts.serializers import UserSerializer
+from comments.serializers import CommentSerializer
+from files.serializers import AttachmentSerializer
 
 
 class ProjectMemberSerializer(serializers.ModelSerializer):
@@ -25,13 +27,18 @@ class ProjectSerializer(serializers.ModelSerializer):
     total_tasks = serializers.ReadOnlyField()
     completed_tasks = serializers.ReadOnlyField()
     
+    
+    comment_count = serializers.ReadOnlyField()
+    attachment_count = serializers.ReadOnlyField()
+    
     class Meta:
         model = Project
         fields = [
             'id', 'name', 'slug', 'description', 'owner', 'manager', 
             'manager_id', 'status', 'priority', 'progress', 'start_date', 
             'due_date', 'completed_date', 'budget', 'is_active', 'is_public',
-            'is_overdue', 'total_tasks', 'completed_tasks', 'created_at', 'updated_at'
+            'is_overdue', 'total_tasks', 'completed_tasks', 'created_at', 'updated_at',
+            'comment_count', 'attachment_count'  
             ]
         read_only_fields = ['id', 'slug', 'owner','created_at','updated_at']
         
@@ -40,10 +47,12 @@ class ProjectDetailSerializer(ProjectSerializer):
     """Detailed project serializer with members"""  
     
     members = ProjectMemberSerializer(many=True, read_only=True)
+    comments = CommentSerializer(many=True, read_only=True)
+    attachments = AttachmentSerializer(many=True, read_only=True)
     
     
     class Meta(ProjectSerializer.Meta) :
-        fields = ProjectSerializer.Meta.fields + ['members']    
+        fields = ProjectSerializer.Meta.fields + ['members', 'comments', 'attachments']    
         
 class ProjectCreateSerializer(serializers.ModelSerializer):
     """Create project serializer"""

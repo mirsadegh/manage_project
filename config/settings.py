@@ -399,11 +399,24 @@ if not DEBUG:
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_SAMESITE = 'Lax'
 
-
-# Media Files (for file uploads)
+# Media files configuration
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# File upload settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
+
+# Allowed file extensions (additional security layer)
+ALLOWED_FILE_EXTENSIONS = [
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'txt', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp',
+    'svg', 'zip', 'rar', '7z', 'gz', 'html', 'css',
+    'js', 'json', 'xml'
+]
+
+# Max file size (10 MB)
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 # Static files (CSS, JavaScript, Images)

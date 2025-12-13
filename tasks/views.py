@@ -376,6 +376,48 @@ class TaskViewSet(viewsets.ModelViewSet):
             'message': f'Assigned {updated_count} tasks to {assignee.username}',
             'updated_tasks': updated_count
         })
+        
+        
+    @action(detail=True, methods=['get'])
+    def comments(self, request, pk=None):
+        """Get all comments for this task"""
+        task = self.get_object()
+        comments = task.comments.filter(parent__isnull=True)  # Top-level only
+        
+        from comments.serializers import CommentSerializer
+        serializer = CommentSerializer(comments, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def add_comment(self, request, pk=None):
+        """Add a comment to this task"""
+        task = self.get_object()
+        
+        from comments.serializers import CommentCreateSerializer
+        serializer = CommentCreateSerializer(
+            data={
+                **request.data,
+                'content_type': 'task',
+                'object_id': task.id
+            },
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        comment = serializer.save()
+        
+        from comments.serializers import CommentSerializer
+        return Response(
+            CommentSerializer(comment, context={'request': request}).data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(detail=True, methods=['get'])
+    def attachments(self, request, pk=None):
+        """Get all attachments for this task"""
+        task = self.get_object()
+        
+        from files.serializers import AttachmentSerializer
+        serial          
     
     
     

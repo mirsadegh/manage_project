@@ -4,6 +4,9 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q, F
 from projects.models import Project
 
+from django.contrib.contenttypes.fields import GenericRelation
+
+
 class TaskList(models.Model):
     """Task lists/boards within projects (like Kanban columns)"""
     
@@ -113,6 +116,20 @@ class Task(models.Model):
         blank=True
     )
     
+    comments = GenericRelation(
+        'comments.Comment',
+        content_type_field='content_type',
+        object_id_field='object_id',
+        related_query_name='task'
+    )
+    attachments = GenericRelation(
+        'files.Attachment',
+        content_type_field='content_type',
+        object_id_field='object_id',
+        related_query_name='task'
+    )
+    
+    
     # Position in list
     position = models.IntegerField(default=0)
     
@@ -120,6 +137,7 @@ class Task(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+   
     class Meta:
         ordering = ['position', '-created_at']
         indexes = [
@@ -194,6 +212,16 @@ class Task(models.Model):
         if self.due_date and self.status != self.Status.COMPLETED:
             return timezone.now().date() > self.due_date
         return False
+    
+    @property
+    def comment_count(self):
+        """Get number of comments"""
+        return self.comments.count()
+    
+    @property
+    def attachment_count(self):
+        """Get number of attachments"""
+        return self.attachments.count()
 
 
 class TaskLabel(models.Model):

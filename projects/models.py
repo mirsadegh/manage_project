@@ -3,6 +3,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Q, F, Count
 from django.utils.text import slugify
+from django.contrib.contenttypes.fields import GenericRelation
+
 
 class Project(models.Model):
     """Main project model"""
@@ -72,6 +74,20 @@ class Project(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    
+    comments = GenericRelation(
+        'comments.Comment',
+        content_type_field='content_type',
+        object_id_field='object_id',
+        related_query_name='project'
+    )
+    attachments = GenericRelation(
+        'files.Attachment',
+        content_type_field='content_type',
+        object_id_field='object_id',
+        related_query_name='project'
+    )
     
     class Meta:
         ordering = ['-created_at']
@@ -173,7 +189,17 @@ class Project(models.Model):
         )
         return stats
 
-
+    @property
+    def comment_count(self):
+        """Get number of comments"""
+        return self.comments.count()
+    
+    @property
+    def attachment_count(self):
+        """Get number of attachments"""
+        return self.attachments.count()
+    
+    
 class ProjectMember(models.Model):
     """Project team members"""
     

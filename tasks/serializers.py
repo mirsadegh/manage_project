@@ -1,15 +1,28 @@
 from rest_framework  import serializers
 from .models import Task, TaskLabel, TaskLabelAssignment, TaskDependency, TaskList
 from accounts.serializers import UserSerializer
+from comments.serializers import CommentSerializer
+from files.serializers import AttachmentSerializer
+
 
 
 class TaskLabelSerializer(serializers.ModelSerializer):
     """Task label serializer"""
     
+    comment_count = serializers.ReadOnlyField()
+    attachment_count = serializers.ReadOnlyField()
+    
     class Meta:
-        model = TaskLabel
-        fields = ['id', 'name', 'color']
-        read_only_fields = ['id']
+        model = Task
+        fields = [
+            'id', 'title', 'description', 'project', 'task_list',
+            'parent_task', 'assignee', 'assignee_id', 'created_by',
+            'status', 'priority', 'start_date', 'due_date',
+            'completed_at', 'estimated_hours', 'actual_hours',
+            'position', 'labels', 'is_overdue', 'created_at', 'updated_at',
+            'comment_count', 'attachment_count'  # Add these
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
 
 
 class TaskListSerializer(serializers.ModelSerializer):
@@ -57,8 +70,11 @@ class TaskDetailSerializer(TaskSerializer):
     subtasks = serializers.SerializerMethodField()
     dependencies = serializers.SerializerMethodField()
     
+    comments = CommentSerializer(many=True, read_only=True)
+    attachments = AttachmentSerializer(many=True, read_only=True)
+    
     class Meta(TaskSerializer.Meta):
-        fields = TaskSerializer.Meta.fields + ['subtasks', 'dependencies']
+        fields = TaskSerializer.Meta.fields + ['subtasks', 'dependencies','comments', 'attachments']
     
     def get_subtasks(self, obj):
         subtasks = obj.subtasks.all()
