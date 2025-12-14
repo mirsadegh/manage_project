@@ -15,8 +15,12 @@ urlpatterns = [
     
     # API endpoints
     path('api/accounts/', include('accounts.urls')),
-    path('api/', include('projects.urls')),
+    path('api/projects/', include('projects.urls')),
     path('api/tasks/', include('tasks.urls')),
+    path('api/teams/', include('teams.urls')),
+    path('api/comments/', include('comments.urls')),
+    path('api/files/', include('files.urls')),
+    path('api/activity/', include('activity.urls')),
     
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

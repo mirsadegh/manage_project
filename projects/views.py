@@ -109,9 +109,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
    
     
     
-    
-    
-    
     def perform_create(self, serializer):
         """Set current user as project owner"""
         project = serializer.save(owner=self.request.user)
@@ -333,3 +330,75 @@ class ProjectViewSet(viewsets.ModelViewSet):
             throttle_classes = self.throttle_classes
         
         return [throttle() for throttle in throttle_classes]
+
+
+
+    @action(detail=True, methods=['get'])
+    def comments(self, request, slug=None):
+        """Get all comments for this project"""
+        project = self.get_object()
+        comments = project.comments.filter(parent__isnull=True)  # Top-level only
+        
+        from comments.serializers import CommentSerializer
+        serializer = CommentSerializer(comments, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def add_comment(self, request, slug=None):
+        """Add a comment to this project"""
+        project = self.get_object()
+        
+        from comments.serializers import CommentCreateSerializer
+        serializer = CommentCreateSerializer(
+            data={
+                **request.data,
+                'content_type': 'project',
+                'object_id': project.id
+            },
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        comment = serializer.save()
+        from comments.serializers import CommentSerializer
+        return Response(
+            CommentSerializer(comment, context={'request': request}).data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(detail=True, methods=['get'])
+    def attachments(self, request, slug=None):
+        """Get all attachments for this project"""
+        project = self.get_object()
+        attachments = project.attachments.all()
+        
+        from files.serializers import AttachmentSerializer
+        serializer = AttachmentSerializer(
+            attachments,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def upload_file(self, request, slug=None):
+        """Upload a file to this project"""
+        project = self.get_object()
+        
+        from files.serializers import AttachmentUploadSerializer
+        serializer = AttachmentUploadSerializer(
+            data={
+                **request.data,
+                'content_type': 'project',
+                'object_id': project.id
+            },
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        attachment = serializer.save()
+        
+        from files.serializers import AttachmentSerializer
+        return Response(
+            AttachmentSerializer(attachment, context={'request': request}).data,
+            status=status.HTTP_201_CREATED
+        )
+                

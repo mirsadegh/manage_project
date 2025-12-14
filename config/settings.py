@@ -89,6 +89,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # Custom middleware
     'config.middleware.PermissionLoggingMiddleware',
+    'files.middleware.FileAccessLoggingMiddleware',
 ]
 
 # Add debug toolbar only in development (not testing)
@@ -377,6 +378,23 @@ LOGGING = {
         },
     },
 }
+
+LOGGING['handlers']['file_access'] = {
+    'level': 'INFO',
+    'class': 'logging.handlers.RotatingFileHandler',
+    'filename': os.path.join(BASE_DIR, 'logs/file_access.log'),
+    'maxBytes': 1024 * 1024 * 10,  # 10 MB
+    'backupCount': 5,
+    'formatter': 'verbose',
+}
+
+LOGGING['loggers']['files'] = {
+    'handlers': ['file_access', 'console'],
+    'level': 'INFO',
+    'propagate': False,
+}
+
+
 
 # Debug Toolbar (Development only)
 INTERNAL_IPS = ['127.0.0.1', 'localhost']

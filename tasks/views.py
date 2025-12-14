@@ -415,10 +415,38 @@ class TaskViewSet(viewsets.ModelViewSet):
     def attachments(self, request, pk=None):
         """Get all attachments for this task"""
         task = self.get_object()
+        attachments = task.attachments.all()
         
         from files.serializers import AttachmentSerializer
-        serial          
+        serializer = AttachmentSerializer(
+            attachments,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
     
+    @action(detail=True, methods=['post'])
+    def upload_file(self, request, pk=None):
+        """Upload a file to this task"""
+        task = self.get_object()
+        
+        from files.serializers import AttachmentUploadSerializer
+        serializer = AttachmentUploadSerializer(
+            data={
+                **request.data,
+                'content_type': 'task',
+                'object_id': task.id
+            },
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        attachment = serializer.save()
+        
+        from files.serializers import AttachmentSerializer
+        return Response(
+            AttachmentSerializer(attachment, context={'request': request}).data,
+            status=status.HTTP_201_CREATED
+        )
     
     
 class TaskLabelViewSet(viewsets.ModelViewSet):
