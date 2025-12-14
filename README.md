@@ -87,9 +87,12 @@ python manage.py runserver
 
  Summary of Models
  App          Models                  Purpose
- accounts     CustomUserUser          authentication and profiles
- projects     Project, ProjectMember   Project management and team
- tasks        (Task, TaskList, TaskLabel, TaskLabelAssignment, TaskDependency )     Task management
+ accounts     CustomUserUser          authentication and 
+ profiles
+ projects     Project, ProjectMember   Project management and 
+ team
+ tasks        (Task, TaskList, TaskLabel, 
+ TaskLabelAssignment, TaskDependency )     Task management
  teams        Team, TeamMembership        Team organization 
  comments     Comment          Discussions and feedback
  files        Attachment      File uploads
@@ -98,14 +101,32 @@ python manage.py runserver
 
 
 
-
-
-
-
-
-
-
-
+ API Endpoint Summary
+📁 File Upload Endpoints
+MethodEndpointDescriptionAuth Required🟢 GET/api/files/
+attachments/List all attachments✅ Yes🟢 GET/api/files/
+attachments/?content_type=task&object_id=1Filter by object✅ 
+Yes🔵 POST/api/files/attachments/Upload file✅ Yes🟢 GET/api/
+files/attachments/{id}/Get file details✅ Yes🟢 GET/api/files/
+attachments/{id}/download/Download file✅ Yes🟢 GET/api/files/
+attachments/{id}/preview/Preview file✅ Yes🔴 DELETE/api/files/
+attachments/{id}/Delete file✅ Yes🟢 GET/api/files/attachments/
+stats/Get upload stats✅ Yes
+💬 Comment Endpoints
+MethodEndpointDescriptionAuth Required🟢 GET/api/comments/
+comments/List comments✅ Yes🟢 GET/api/comments/comments/?
+content_type=task&object_id=1Filter comments✅ Yes🔵 POST/api/
+comments/comments/Create comment✅ Yes🟡 PUT/api/comments/
+comments/{id}/Update comment✅ Yes🔴 DELETE/api/comments/
+comments/{id}/Delete comment✅ Yes🔵 POST/api/comments/
+comments/{id}/react/Add reaction✅ Yes🔴 DELETE/api/comments/
+comments/{id}/unreact/Remove reaction✅ Yes
+📋 Task Comment Shortcuts
+MethodEndpointDescription🟢 GET/api/tasks/tasks/{id}/comments/
+Get task comments🔵 POST/api/tasks/tasks/{id}/add_comment/Add 
+comment to task🟢 GET/api/tasks/tasks/{id}/attachments/Get 
+task files🔵 POST/api/tasks/tasks/{id}/upload_file/Upload 
+file to task
 
 
 

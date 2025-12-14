@@ -1,3 +1,5 @@
+# files/views.py
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -80,6 +82,10 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             description=f'Uploaded file "{attachment.original_filename}"',
             request=self.request
         )
+        
+        # Trigger async virus scan
+        from .tasks import scan_uploaded_file
+        scan_uploaded_file.delay(attachment.id)
     
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
@@ -197,27 +203,3 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         )
         
         instance.delete()
-        
-    
-    def perform_create(self, serializer):
-        """Save attachment, log activity, and trigger virus scan"""
-        attachment = serializer.save(uploaded_by=self.request.user)
-        
-        # Log activity
-        from activity.models import ActivityLog
-        ActivityLog.log_activity(
-            user=self.request.user,
-            action=ActivityLog.Action.UPLOADED,
-            content_object=attachment.content_object,
-            description=f'Uploaded file "{attachment.original_filename}"',
-            request=self.request
-        )
-        
-        # Trigger async virus scan
-        from .tasks import scan_uploaded_file
-        scan_uploaded_file.delay(attachment.id)    
-        
-        
-        
-        
-        
