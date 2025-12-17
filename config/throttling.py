@@ -29,11 +29,23 @@ class AnonymousUserThrottle(AnonRateThrottle):
 
 class LoginRateThrottle(AnonRateThrottle):
     """
-    Rate limiting for login attempts - 5 per hour.
-    Prevents brute force attacks.
+    Rate limiting for login attempts.
+    Uses IP address for anonymous users.
     """
     scope = 'login'
-    rate = '5/hour'
+    
+    def get_cache_key(self, request, view):
+        # Use IP address for rate limiting login attempts
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': self.get_ident(request)
+        }
+
+class PasswordResetRateThrottle(AnonRateThrottle):
+    """Rate limiting for password reset requests."""
+    scope = 'password_reset'
+
+
 
 
 class ProjectCreationThrottle(UserRateThrottle):

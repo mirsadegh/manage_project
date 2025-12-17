@@ -1,7 +1,8 @@
-# files/virus_scanner.py
-
 import subprocess
 import logging
+import clamd
+
+
 
 logger = logging.getLogger('files')
 
@@ -11,48 +12,44 @@ class VirusScanner:
     Virus scanner using ClamAV.
     Install ClamAV: sudo apt-get install clamav clamav-daemon
     """
-    
+
     @staticmethod
-    def scan_file(file_path):
+    def scan_file(file_path: str) -> tuple[bool, str]:
         """
-        Scan a file for viruses using ClamAV.
-        
-        Args:
-            file_path: Path to the file to scan
-        
-        Returns:
-            tuple: (is_safe, scan_result)
+        Scan a file for viruses using ClamAV daemon.
+        Returns (is_safe, message)
         """
         try:
-            # Run clamav scan
-            result = subprocess.run(
-                ['clamscan', '--no-summary', file_path],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            # Check result
-            if result.returncode == 0:
-                # File is clean
+            cd = clamd.ClamdUnixSocket()
+            # Test connection
+            cd.ping()
+        except (clamd.ConnectionError, FileNotFoundError):
+            # CRITICAL FIX: Fail closed when scanner unavailable
+            logger.error("ClamAV not available - rejecting file upload")
+            return False, "Virus scanner unavailable - cannot process file"
+        
+        try:
+            scan_result = cd.scan(file_path)
+            if scan_result is None:
                 logger.info(f"File scanned: {file_path} - CLEAN")
-                return True, "Clean"
-            else:
-                # Virus found
-                logger.warning(f"File scanned: {file_path} - INFECTED")
-                return False, "Virus detected"
-                
-        except subprocess.TimeoutExpired:
-            logger.error(f"Virus scan timeout: {file_path}")
-            return False, "Scan timeout"
-        except FileNotFoundError:
-            # ClamAV not installed
-            logger.warning("ClamAV not installed - skipping virus scan")
-            return True, "Scanner not available"
+                return True, "File is clean"
+            
+            # File is infected
+            # The result format is {'/path/to/file': ('FOUND', 'Virus.Name')}
+            status, virus_name = list(scan_result.values())[0]
+            if status == 'FOUND':
+                logger.warning(f"File scanned: {file_path} - INFECTED with {virus_name}")
+                return False, f"Virus detected: {virus_name}"
+            
+            # Fallback for other statuses
+            logger.warning(f"File scanned: {file_path} - UNKNOWN STATUS: {scan_result}")
+            return False, f"Scan result unknown: {scan_result}"
+
         except Exception as e:
-            logger.error(f"Virus scan error: {str(e)}")
-            return True, f"Scan error: {str(e)}"
-    
+            # CRITICAL FIX: Fail closed on scanning errors
+            logger.error(f"Virus scan failed: {str(e)}")
+            return False, f"Virus scan failed: {str(e)}"
+   
     @staticmethod
     def scan_file_async(attachment_id):
         """

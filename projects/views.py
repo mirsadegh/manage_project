@@ -159,10 +159,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         # Notify existing members
         notify_project_members(
-            project,
-            'MEMBER_JOINED',
-            'New Member',
-            f'{member.user.get_full_name()} joined the project'
+            project.slug,
+            f'{member.user.get_full_name()} joined the project',
+            'info',
+            self.request.user
         )
         
         # Broadcast to project watchers
@@ -171,7 +171,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             'member_name': member.user.get_full_name(),
                'member_role': member.role
         }
-        broadcast_project_update(project.slug, 'member_joined', update_data)
+        broadcast_project_update(project.slug, update_data, self.request.user)
         
         return Response(serializer.data, status=status.HTTP_201_CREATED)
         

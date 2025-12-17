@@ -30,6 +30,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if os.getenv('DJANGO_ENV') == 'production':
+        raise ImproperlyConfigured(
+            "SECRET_KEY environment variable must be set in production"
+        )
+    else:
+        # Development fallback with clear warning
+        import warnings
+        warnings.warn(
+            "SECRET_KEY not set - using insecure default for development only",
+            RuntimeWarning
+        )
+        SECRET_KEY = 'django-insecure-dev-key-change-this-in-production'
+
+
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG',  'False') == 'True'
@@ -327,6 +343,15 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+# WebSocket settings
+WEBSOCKET_SETTINGS = {
+    'ALLOW_ANONYMOUS': False,
+    'RATE_LIMIT_CONNECTIONS': 10,
+    'RATE_LIMIT_WINDOW': 60,
+}
+
+
 
 # Logging Configuration
 LOGGING = {
