@@ -44,3 +44,25 @@ app.conf.beat_schedule = {
 def debug_task(self):
     """Debug task for testing Celery"""
     print(f'Request: {self.request!r}')
+    
+    
+app.conf.beat_schedule.update({
+    # Expire old invitations daily at midnight
+    'expire-team-invitations': {
+        'task': 'teams.tasks.expire_old_invitations',
+        'schedule': crontab(hour=0, minute=0),
+    },
+    # Send meeting reminders every hour
+    'send-meeting-reminders': {
+        'task': 'teams.tasks.send_meeting_reminders',
+        'schedule': crontab(minute=0),
+    },
+    # Update team stats weekly
+    'update-team-stats': {
+        'task': 'teams.tasks.update_team_stats',
+        'schedule': crontab(hour=0, minute=0, day_of_week=0),
+    },
+})    
+    
+    
+    
