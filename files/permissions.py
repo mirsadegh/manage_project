@@ -47,7 +47,30 @@ class CanAccessAttachment(permissions.BasePermission):
         
         elif content_object.__class__.__name__ == 'Comment':
             # Check if user has access to comment's parent object
-            return self.has_object_permission(request, view, content_object.content_object)
-        
+            # Get the actual parent (Task or Project) that the comment is attached to
+            comment_parent = content_object.content_object
+            parent_class_name = comment_parent.__class__.__name__
+
+            if parent_class_name == 'Task':
+                from projects.models import ProjectMember
+                project = comment_parent.project
+                return (
+                    project.owner == request.user or
+                    project.manager == request.user or
+                    comment_parent.assignee == request.user or
+                    comment_parent.created_by == request.user or
+                    ProjectMember.objects.filter(project=project, user=request.user).exists()
+                )
+            elif parent_class_name == 'Project':
+                from projects.models import ProjectMember
+                return (
+                    comment_parent.owner == request.user or
+                    comment_parent.manager == request.user or
+                    ProjectMember.objects.filter(project=comment_parent, user=request.user).exists() or
+                    comment_parent.is_public
+                )
+            # If comment is on something else, deny access
+            return False
+
         # Default: deny access
         return False
