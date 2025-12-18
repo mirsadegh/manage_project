@@ -9,18 +9,10 @@ from files.serializers import AttachmentSerializer
 class TaskLabelSerializer(serializers.ModelSerializer):
     """Task label serializer"""
     
-    comment_count = serializers.ReadOnlyField()
-    attachment_count = serializers.ReadOnlyField()
-    
     class Meta:
-        model = Task
+        model = TaskLabel
         fields = [
-            'id', 'title', 'description', 'project', 'task_list',
-            'parent_task', 'assignee', 'assignee_id', 'created_by',
-            'status', 'priority', 'start_date', 'due_date',
-            'completed_at', 'estimated_hours', 'actual_hours',
-            'position', 'labels', 'is_overdue', 'created_at', 'updated_at',
-            'comment_count', 'attachment_count'  # Add these
+            'id', 'name', 'color', 'project'
         ]
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
 

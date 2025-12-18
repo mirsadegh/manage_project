@@ -3,6 +3,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from drf_spectacular.utils import extend_schema_field
 
 User = get_user_model()
 
@@ -20,6 +21,9 @@ class UserSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'date_joined']
     
+    from drf_spectacular.utils import extend_schema_field
+    
+    @extend_schema_field(str)
     def get_full_name(self, obj):
         return obj.get_full_name()
 
@@ -33,11 +37,12 @@ class UserDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'full_name', 'role', 'department', 'is_available',
-            'job_title', 'phone_number', 'bio', 'avatar',
+            'job_title', 'phone_number', 'bio', 'profile_picture',
             'date_joined', 'last_login'
         ]
         read_only_fields = ['id', 'date_joined', 'last_login', 'role']
     
+    @extend_schema_field(str)
     def get_full_name(self, obj):
         return obj.get_full_name()
 
