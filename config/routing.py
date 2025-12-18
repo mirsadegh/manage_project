@@ -3,11 +3,11 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 from .websocket_auth import JWTAuthMiddleware
 from notifications.consumers import NotificationConsumer
-from projects.consumers import ProjectUpdateConsumer
+from projects.consumers import ProjectConsumer
 
 websocket_urlpatterns = [
     path('ws/notifications/', NotificationConsumer.as_asgi()),
-    path('ws/projects/<int:project_id>/', ProjectUpdateConsumer.as_asgi()),
+    path('ws/projects/<slug:project_slug>/', ProjectConsumer.as_asgi()),
 ]
 
 application = ProtocolTypeRouter({
