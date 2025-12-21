@@ -2,7 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from .factories import UserFactory, AdminUserFactory, ManagerUserFactory
+from accounts.tests.factories import UserFactory, AdminUserFactory, ManagerUserFactory
 
 User = get_user_model()
 
@@ -23,7 +23,7 @@ def user():
 def dev_user(user):
     """Ensure the user fixture has a DEV role for clarity."""
     # Assuming UserFactory creates a user with a default role, we set it explicitly.
-    user.role = User.Role.DEV  # Replace 'DEV' with your actual role enum/string
+    user.role = User.Role.DEVELOPER  # Use the correct role enum value
     user.save()
     return user
 

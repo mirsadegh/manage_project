@@ -8,6 +8,12 @@ DATABASES = {
     }
 }
 
+# Remove debug toolbar from installed apps for testing
+INSTALLED_APPS = [app for app in INSTALLED_APPS if app != 'debug_toolbar']
+
+# Remove debug toolbar middleware
+MIDDLEWARE = [middleware for middleware in MIDDLEWARE if 'debug_toolbar' not in middleware]
+
 # Disable migrations for faster tests
 class DisableMigrations:
     def __contains__(self, item):

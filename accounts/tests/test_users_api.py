@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 
+@pytest.mark.django_db
 class TestUserRegistration:
     """Test user registration endpoint."""
 
@@ -14,7 +15,7 @@ class TestUserRegistration:
             'username': 'testuser',
             'email': 'test@example.com',
             'password': 'TestPass123!',
-            'password2': 'TestPass123!',
+            'password_confirm': 'TestPass123!',
             'first_name': 'Test',
             'last_name': 'User',
             'role': 'DEV'  # Adjust role as needed
@@ -58,6 +59,7 @@ class TestUserRegistration:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
+@pytest.mark.django_db
 class TestUserAuthentication:
     """Test user authentication (login) endpoint."""
 
@@ -104,6 +106,7 @@ class TestUserAuthentication:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
+@pytest.mark.django_db
 class TestUserPermissions:
     """Test permissions for different user roles on user endpoints."""
 
