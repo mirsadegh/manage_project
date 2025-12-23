@@ -1,6 +1,7 @@
 # teams/admin.py
 
 from django.contrib import admin
+from django.db import models
 from django.db.models import Count
 from .models import (
     Team, TeamMembership, TeamInvitation,
@@ -26,45 +27,29 @@ class TeamProjectInline(admin.TabularInline):
 
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
-    list_display = [
-        'name', 'team_type', 'lead', 'member_count',
-        'completion_rate', 'is_active', 'created_at'
-    ]
-    list_filter = ['team_type', 'is_active', 'is_public', 'created_at']
-    search_fields = ['name', 'description', 'lead__username']
-    raw_id_fields = ['lead']
-    filter_horizontal = ['co_leads']
-    readonly_fields = ['slug', 'created_at', 'updated_at', 'completion_rate']
+    list_display = ['name', 'member_count', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['name', 'description']
+    readonly_fields = ['created_at', 'updated_at']
     inlines = [TeamMembershipInline, TeamProjectInline]
     date_hierarchy = 'created_at'
-    
+
     fieldsets = (
         ('🎯 Basic Information', {
-            'fields': ('name', 'slug', 'description', 'team_type')
-        }),
-        ('👥 Leadership', {
-            'fields': ('lead', 'co_leads')
-        }),
-        ('⚙️ Settings', {
-            'fields': (
-                'is_active', 'is_public', 'allow_self_join', 'max_members'
-            )
-        }),
-        ('📧 Contact', {
-            'fields': ('email', 'slack_channel', 'location'),
-            'classes': ('collapse',)
-        }),
-        ('📊 Performance', {
-            'fields': (
-                'total_projects', 'completed_projects', 'completion_rate'
-            ),
-            'classes': ('collapse',)
+            'fields': ('name', 'description')
         }),
         ('🕐 Metadata', {
             'fields': ('created_at', 'updated_at')
         }),
     )
-    
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        queryset = queryset.annotate(
+            member_count=Count('memberships', filter=models.Q(memberships__is_active=True))
+        )
+        return queryset
+
     def member_count(self, obj):
         return obj.member_count
     member_count.short_description = '👥 Members'

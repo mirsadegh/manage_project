@@ -1,247 +1,60 @@
-# teams/models.py
-
-from django.db import models
 from django.conf import settings
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db.models import Avg, Count, Q
-from datetime import timedelta
+from django.db import models
 from django.utils import timezone
+from django.core.validators import MinValueValidator, MaxValueValidator
+from datetime import timedelta
 
 
 class Team(models.Model):
     """
-    Enhanced team model with performance tracking and settings.
+    Teams for collaboration and project management.
     """
     
-    class TeamType(models.TextChoices):
-        DEVELOPMENT = 'DEV', 'Development'
-        DESIGN = 'DESIGN', 'Design'
-        MARKETING = 'MARKETING', 'Marketing'
-        SALES = 'SALES', 'Sales'
-        SUPPORT = 'SUPPORT', 'Support'
-        MANAGEMENT = 'MGMT', 'Management'
-        CROSS_FUNCTIONAL = 'CROSS', 'Cross-functional'
-    
-    # Basic Info
-    name = models.CharField(
-        max_length=100,
-        unique=True,
-        help_text="Team name"
-    )
-    slug = models.SlugField(
-        max_length=100,
-        unique=True,
-        blank=True,
-        help_text="URL-friendly team identifier"
-    )
-    description = models.TextField(
-        blank=True,
-        help_text="Team description and purpose"
-    )
-    team_type = models.CharField(
-        max_length=20,
-        choices=TeamType.choices,
-        default=TeamType.CROSS_FUNCTIONAL,
-        help_text="Type of team"
-    )
-    
-    # Leadership
-    lead = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='led_teams',
-        help_text="Team lead/manager"
-    )
-    co_leads = models.ManyToManyField(
-        settings.AUTH_USER_MODEL,
-        related_name='co_led_teams',
-        blank=True,
-        help_text="Assistant team leads"
-    )
-    
-    # Team Settings
-    is_active = models.BooleanField(
-        default=True,
-        help_text="Whether this team is active"
-    )
-    is_public = models.BooleanField(
-        default=False,
-        help_text="Whether team is visible to all users"
-    )
-    allow_self_join = models.BooleanField(
-        default=False,
-        help_text="Allow users to join without invitation"
-    )
-    max_members = models.IntegerField(
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(1)],
-        help_text="Maximum number of team members (null = unlimited)"
-    )
-    
-    # Contact & Location
-    email = models.EmailField(
-        blank=True,
-        help_text="Team contact email"
-    )
-    slack_channel = models.CharField(
-        max_length=100,
-        blank=True,
-        help_text="Slack channel name"
-    )
-    location = models.CharField(
-        max_length=200,
-        blank=True,
-        help_text="Team location or timezone"
-    )
-    
-    # Performance Tracking
-    total_projects = models.IntegerField(
-        default=0,
-        help_text="Total projects assigned to team"
-    )
-    completed_projects = models.IntegerField(
-        default=0,
-        help_text="Number of completed projects"
-    )
-    
-    # Many-to-many relationship
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         through='TeamMembership',
-        related_name='teams',
-        help_text="Team members"
+        through_fields=('team', 'user')
     )
     
-    # Metadata
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
     class Meta:
-        ordering = ['name']
-        indexes = [
-            models.Index(fields=['slug']),
-            models.Index(fields=['team_type', 'is_active']),
-        ]
+        ordering = ['-created_at']
         verbose_name = 'Team'
         verbose_name_plural = 'Teams'
     
     def __str__(self):
         return self.name
     
-    def save(self, *args, **kwargs):
-        if not self.slug:
-            from django.utils.text import slugify
-            self.slug = slugify(self.name)
-        super().save(*args, **kwargs)
-    
-    @property
-    def member_count(self):
-        """Get total number of active team members"""
-        return self.memberships.filter(is_active=True).count()
-    
-    @property
-    def is_full(self):
-        """Check if team has reached max capacity"""
-        if not self.max_members:
-            return False
-        return self.member_count >= self.max_members
-    
-    @property
-    def completion_rate(self):
-        """Calculate project completion rate"""
-        if self.total_projects == 0:
-            return 0
-        return round((self.completed_projects / self.total_projects) * 100, 2)
-    
-    @property
-    def active_projects(self):
-        """Get active projects assigned to this team"""
-        from projects.models import Project
-        return Project.objects.filter(
-            members__user__in=self.members.all(),
-            is_active=True
-        ).distinct()
-    
-    @property
-    def active_tasks(self):
-        """Get active tasks assigned to team members"""
-        from tasks.models import Task
-        return Task.objects.filter(
-            assignee__in=self.members.all(),
-            status__in=['TODO', 'IN_PROGRESS']
-        ).distinct()
-    
-    def get_team_leaders(self):
-        """Get all team leaders (lead + co-leads)"""
-        leaders = []
-        if self.lead:
-            leaders.append(self.lead)
-        leaders.extend(self.co_leads.all())
-        return leaders
-    
-    def is_leader(self, user):
-        """Check if user is a team leader"""
-        return user == self.lead or user in self.co_leads.all()
-    
-    def add_member(self, user, role='MEMBER', added_by=None):
-        """Add a member to the team"""
-        if self.is_full:
-            raise ValueError("Team has reached maximum capacity")
-        
-        membership, created = TeamMembership.objects.get_or_create(
+    def add_member(self, user, role, added_by=None):
+        """
+        Add a member to the team.
+        """
+        TeamMembership.objects.create(
             team=self,
             user=user,
-            defaults={'role': role, 'added_by': added_by}
+            role=role,
+            added_by=added_by
         )
-        
-        if not created and not membership.is_active:
-            membership.is_active = True
-            membership.save()
-        
-        return membership
     
     def remove_member(self, user):
-        """Remove a member from the team"""
-        try:
-            membership = TeamMembership.objects.get(team=self, user=user)
-            membership.is_active = False
-            membership.save()
-            return True
-        except TeamMembership.DoesNotExist:
-            return False
-    
-    def get_performance_stats(self):
-        """Get team performance statistics"""
-        memberships = self.memberships.filter(is_active=True)
-        
-        return {
-            'total_members': memberships.count(),
-            'total_projects': self.total_projects,
-            'completed_projects': self.completed_projects,
-            'completion_rate': self.completion_rate,
-            'active_projects': self.active_projects.count(),
-            'active_tasks': self.active_tasks.count(),
-            'avg_member_rating': memberships.aggregate(
-                avg=Avg('performance_rating')
-            )['avg'] or 0
-        }
+        """
+        Remove a member from the team.
+        """
+        TeamMembership.objects.filter(team=self, user=user).delete()
 
 
 class TeamMembership(models.Model):
     """
-    Enhanced team membership with performance tracking.
+    Team membership with roles and performance tracking.
     """
     
     class Role(models.TextChoices):
-        LEAD = 'LEAD', 'Team Lead'
-        CO_LEAD = 'CO_LEAD', 'Co-Lead'
-        SENIOR = 'SENIOR', 'Senior Member'
         MEMBER = 'MEMBER', 'Member'
-        JUNIOR = 'JUNIOR', 'Junior Member'
-        INTERN = 'INTERN', 'Intern'
+        CO_LEAD = 'CO_LEAD', 'Co-Lead'
+        LEAD = 'LEAD', 'Lead'
     
     team = models.ForeignKey(
         Team,

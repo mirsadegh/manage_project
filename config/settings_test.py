@@ -36,9 +36,17 @@ CACHES = {
     }
 }
 
+# Disable Channels/Redis for tests
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    }
+}
+
 # Disable celery tasks
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_BROKER_URL = 'memory://'  # Use in-memory broker for tests
 
 # Disable virus scanning in tests
 VIRUS_SCANNING_ENABLED = False
