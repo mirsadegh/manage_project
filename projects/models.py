@@ -142,7 +142,12 @@ class Project(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
+            # Generate slug from name, fallback to ID if slugify returns empty
             self.slug = slugify(self.name)
+            if not self.slug:
+                # Use name hash or ID as fallback
+                import hashlib
+                self.slug = f"project-{hashlib.md5(self.name.encode()).hexdigest()[:8]}"
         self.full_clean()
         super().save(*args, **kwargs)
         

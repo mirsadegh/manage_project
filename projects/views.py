@@ -73,21 +73,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter projects user has access to"""
         user = self.request.user
-        
+
         base_qs = Project.objects.all()
-        
-        # Annotate task stats for list pagination to avoid N+1
-        if self.action == 'list':
-            from tasks.models import Task
-            base_qs = base_qs.annotate(
-                total_tasks=Count('tasks'),
-                completed_tasks=Count('tasks', filter=Q(tasks__status=Task.Status.COMPLETED))
-            )
-        
+
         # Superusers see all projects
         if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
             return base_qs
-        
+
         # Users see projects they own, manage, or are members of
         if self.action in ['list', 'retrieve']:
             return base_qs.filter(
@@ -96,7 +88,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 Q(members__user=user) |
                 Q(is_public=True)
             ).distinct()
-            
+
         return base_qs
     
     
