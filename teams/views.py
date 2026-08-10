@@ -11,7 +11,7 @@ from .models import (
     TeamProject, TeamMeeting, TeamGoal
 )
 from .serializers import (
-    TeamSerializer, TeamDetailSerializer,
+    TeamSerializer, TeamDetailSerializer, TeamCreateSerializer,
     TeamMembershipSerializer, TeamInvitationSerializer,
     TeamProjectSerializer, TeamMeetingSerializer,
     TeamGoalSerializer
@@ -47,6 +47,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     lookup_field = 'slug'
     
     def get_serializer_class(self):
+        if self.action == 'create':
+            return TeamCreateSerializer
         if self.action == 'retrieve':
             return TeamDetailSerializer
         return TeamSerializer

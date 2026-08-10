@@ -30,56 +30,43 @@ class TeamMembershipSerializer(serializers.ModelSerializer):
 
 
 class TeamSerializer(serializers.ModelSerializer):
-    """Serializer for teams"""
-    
-    lead = UserSerializer(read_only=True)
-    lead_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    co_leads = UserSerializer(many=True, read_only=True)
-    co_lead_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        write_only=True,
-        required=False
-    )
-    
-    member_count = serializers.ReadOnlyField()
-    is_full = serializers.ReadOnlyField()
-    completion_rate = serializers.ReadOnlyField()
-    
+    """Serializer for teams (read)."""
+    member_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Team
         fields = [
-            'id', 'name', 'slug', 'description', 'team_type',
-            'lead', 'lead_id', 'co_leads', 'co_lead_ids',
-            'is_active', 'is_public', 'allow_self_join', 'max_members',
-            'email', 'slack_channel', 'location',
-            'total_projects', 'completed_projects', 'completion_rate',
-            'member_count', 'is_full', 'created_at', 'updated_at'
+            'id', 'name', 'description', 'member_count',
+            'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'slug', 'created_at', 'updated_at']
-    
-    def create(self, validated_data):
-        co_lead_ids = validated_data.pop('co_lead_ids', [])
-        team = super().create(validated_data)
-        
-        if co_lead_ids:
-            from accounts.models import CustomUser
-            co_leads = CustomUser.objects.filter(id__in=co_lead_ids)
-            team.co_leads.set(co_leads)
-        
-        return team
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_member_count(self, obj):
+        return obj.members.count()
+
+
+class TeamCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating a team (name + description)."""
+
+    class Meta:
+        model = Team
+        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class TeamDetailSerializer(TeamSerializer):
-    """Detailed team serializer with members and stats"""
-    
+    """Detailed team serializer with members and stats."""
     memberships = TeamMembershipSerializer(many=True, read_only=True)
     performance_stats = serializers.SerializerMethodField()
-    
+
     class Meta(TeamSerializer.Meta):
         fields = TeamSerializer.Meta.fields + ['memberships', 'performance_stats']
-    
+
     def get_performance_stats(self, obj):
-        return obj.get_performance_stats()
+        try:
+            return obj.get_performance_stats()
+        except Exception:
+            return {}
 
 
 class TeamInvitationSerializer(serializers.ModelSerializer):
