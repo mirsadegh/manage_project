@@ -27,6 +27,10 @@ class IsProjectMember(permissions.BasePermission):
         # Get the project object
         project = obj if hasattr(obj, 'owner') else obj.project
         
+        # Admins and superusers have access to all projects
+        if request.user.is_superuser or getattr(request.user, 'role', None) == 'ADMIN':
+            return True
+        
         # Check if user is a member
         is_member = ProjectMember.objects.filter(
             project=project,

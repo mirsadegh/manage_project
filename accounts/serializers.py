@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema_field
 
 User = get_user_model()
-
+from drf_spectacular.utils import extend_schema_field
 
 class UserSerializer(serializers.ModelSerializer):
     """Basic user serializer for list views."""
@@ -20,8 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
             'job_title', 'date_joined'
         ]
         read_only_fields = ['id', 'date_joined']
-    
-    from drf_spectacular.utils import extend_schema_field
+
     
     @extend_schema_field(str)
     def get_full_name(self, obj):

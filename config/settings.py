@@ -225,9 +225,12 @@ REST_FRAMEWORK = {
         'burst': '60/min',
         'sustained': '1000/day',
         'anon': '20/hour',
-        'login': '5/hour',
+        # Login is IP-scoped; keep it usable in local/dev while still limiting brute force.
+        # Production can tighten via env (e.g. LOGIN_THROTTLE_RATE=5/hour).
+        'login': os.getenv('LOGIN_THROTTLE_RATE', '30/hour' if DEBUG else '10/hour'),
         'project_creation': '10/hour',
         'task_creation': '50/hour',
+        'password_reset': '5/hour',
     }
 }
 
