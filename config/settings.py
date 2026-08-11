@@ -13,6 +13,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -136,14 +137,67 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+#
+# Configuration priority:
+#   1. DATABASE_URL  (e.g. postgresql://user:pass@localhost:5432/dbname)
+#   2. Individual DATABASE_NAME / DATABASE_USER / ... variables
+#   3. SQLite fallback (local development only)
+import urllib.parse
 
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+def _build_databases():
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        parsed = urllib.parse.urlparse(database_url)
+        scheme = parsed.scheme.split('+')[0]
+        if scheme in ('sqlite', 'sqlite3'):
+            return {
+                'default': {
+                    'ENGINE': 'django.db.backends.sqlite3',
+                    'NAME': parsed.path.lstrip('/') or str(BASE_DIR / 'db.sqlite3'),
+                }
+            }
+        if scheme in ('postgres', 'postgresql', 'postgresql_psycopg2'):
+            return {
+                'default': {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': parsed.path.lstrip('/'),
+                    'USER': urllib.parse.unquote(parsed.username or ''),
+                    'PASSWORD': urllib.parse.unquote(parsed.password or ''),
+                    'HOST': parsed.hostname or 'localhost',
+                    'PORT': str(parsed.port) if parsed.port else '',
+                    'CONN_MAX_AGE': 60,
+                }
+            }
+        raise ImproperlyConfigured(
+            f"Unsupported DATABASE_URL scheme: '{scheme}'. "
+            "Supported schemes: postgresql://, postgres://, sqlite://"
+        )
+
+    database_name = os.getenv('DATABASE_NAME')
+    if database_name:
+        return {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': database_name,
+                'USER': os.getenv('DATABASE_USER', ''),
+                'PASSWORD': os.getenv('DATABASE_PASSWORD', ''),
+                'HOST': os.getenv('DATABASE_HOST', 'localhost'),
+                'PORT': os.getenv('DATABASE_PORT', '5432'),
+                'CONN_MAX_AGE': 60,
+            }
+        }
+
+    # Local development fallback (SQLite). Not for production.
+    return {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-}
+
+
+DATABASES = _build_databases()
 
 
 
