@@ -55,8 +55,10 @@ class TaskFactory(factory.django.DjangoModelFactory):
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
         # Ensure task_list belongs to the same project
-        if 'task_list' not in kwargs and 'project' in kwargs:
-            kwargs['task_list'] = TaskListFactory(project=kwargs['project'])
+        if 'task_list' in kwargs and 'project' in kwargs:
+            task_list = kwargs['task_list']
+            if task_list.project_id != kwargs['project'].id:
+                kwargs['task_list'] = TaskListFactory(project=kwargs['project'])
         return super()._create(model_class, *args, **kwargs)
 
 

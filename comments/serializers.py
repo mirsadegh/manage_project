@@ -29,15 +29,19 @@ class CommentSerializer(serializers.ModelSerializer):
     # For writing
     content_type_id = serializers.IntegerField(write_only=True, required=False)
     object_id = serializers.IntegerField(write_only=True, required=False)
+    content_type = serializers.SerializerMethodField()
     
     class Meta:
         model = Comment
         fields = [
-            'id', 'author', 'text', 'parent', 'content_type_id', 'object_id',
+            'id', 'author', 'text', 'parent', 'content_type', 'content_type_id', 'object_id',
             'is_edited', 'is_deleted', 'created_at', 'updated_at', 'replies', 'reactions',
             'reply_count', 'is_reply'
         ]
         read_only_fields = ['id', 'author', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
+    
+    def get_content_type(self, obj):
+        return obj.content_type.model
     
     def get_replies(self, obj):
         """Get direct replies to this comment"""

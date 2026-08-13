@@ -47,10 +47,12 @@ class CommentViewSet(viewsets.ModelViewSet):
         content_type = self.request.query_params.get('content_type')
         object_id = self.request.query_params.get('object_id')
         
-        if content_type and object_id:
+        if content_type:
             try:
                 ct = ContentType.objects.get(model=content_type.lower())
-                queryset = queryset.filter(content_type=ct, object_id=object_id)
+                queryset = queryset.filter(content_type=ct)
+                if object_id:
+                    queryset = queryset.filter(object_id=object_id)
             except ContentType.DoesNotExist:
                 queryset = queryset.none()
         
@@ -86,10 +88,79 @@ class CommentViewSet(viewsets.ModelViewSet):
         comment.save(update_fields=['is_deleted', 'text', 'updated_at'])
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-    @action(detail=True, methods=['post'])
-    def react(self, request, pk=None):
-        """Add or update reaction to comment"""
+    @action(detail=False, methods=['get'], url_path=r'statistics/(?P<object_type>[^/.]+)/(?P<object_id>\d+)')
+    def statistics(self, request, object_type=None, object_id=None):
+        """Get comment statistics for a content object"""
+        from django.db.models import Count
+        from tasks.models import Task
+
+        object_type = object_type.lower()
+        if object_type not in ('task', 'project'):
+            return Response(
+                {'error': 'Invalid object_type. Allowed: task, project'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ct = ContentType.objects.get(model=object_type)
+
+        if object_type == 'project':
+            project_comments = Comment.objects.filter(
+                content_type=ct, object_id=object_id
+            )
+            task_ids = Task.objects.filter(project_id=object_id).values_list('id', flat=True)
+            task_ct = ContentType.objects.get(model='task')
+            task_comments = Comment.objects.filter(
+                content_type=task_ct, object_id__in=list(task_ids)
+            )
+            queryset = project_comments | task_comments
+        else:
+            queryset = Comment.objects.filter(content_type=ct, object_id=object_id)
+
+        total_comments = queryset.count()
+
+        top_commenters = list(
+            queryset
+            .values('author__id', 'author__username', 'author__first_name', 'author__last_name')
+            .annotate(comment_count=Count('id'))
+            .order_by('-comment_count')[:5]
+        )
+
+        return Response({
+            'object_type': object_type,
+            'object_id': object_id,
+            'total_comments': total_comments,
+            'top_commenters': top_commenters,
+        })
+
+    @action(detail=True, methods=['get'])
+    def reactions(self, request, pk=None):
+        """Get all reactions for a comment"""
         comment = self.get_object()
+        reactions = CommentReaction.objects.filter(comment=comment)
+        serializer = CommentReactionSerializer(reactions, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post', 'delete'])
+    def react(self, request, pk=None):
+        """Add, update or remove reaction to comment"""
+        comment = self.get_object()
+
+        if request.method == 'DELETE':
+            reaction_type = request.data.get('reaction_type')
+            filters = {
+                'comment': comment,
+                'user': request.user,
+            }
+            if reaction_type:
+                filters['reaction_type'] = reaction_type
+            deleted_count = CommentReaction.objects.filter(**filters).delete()[0]
+            if deleted_count > 0:
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(
+                {'error': 'Reaction not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         reaction_type = request.data.get('reaction_type')
         
         if not reaction_type or reaction_type not in dict(CommentReaction.ReactionType.choices):
@@ -134,7 +205,7 @@ class CommentViewSet(viewsets.ModelViewSet):
     def _process_mentions(self, comment):
         """Process @username mentions in comment text"""
         from accounts.models import CustomUser
-        from notifications.models import Notification
+        from .models import CommentMention
         
         # Find all @username patterns
         mention_pattern = r'@(\w+)'
@@ -144,22 +215,12 @@ class CommentViewSet(viewsets.ModelViewSet):
             try:
                 user = CustomUser.objects.get(username=username)
                 
-                # Create mention record
-                from .models import CommentMention
+                # Create mention record (notification handled by signal)
                 CommentMention.objects.get_or_create(
                     comment=comment,
-                    mentioned_user=user
+                    mentioned_user=user,
+                    defaults={'mentioned_by': self.request.user}
                 )
-                
-                # Send notification
-                if user != comment.author:
-                    Notification.objects.create(
-                        recipient=user,
-                        notification_type='MENTION',
-                        title='You were mentioned',
-                        message=f'{comment.author.get_full_name()} mentioned you in a comment',
-                        content_object=comment
-                    )
             except CustomUser.DoesNotExist:
                 pass
     
