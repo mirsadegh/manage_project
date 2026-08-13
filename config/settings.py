@@ -53,6 +53,9 @@ DEBUG = os.getenv('DEBUG',  'True') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# Frontend base URL used to build links in emails (e.g. password reset).
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+
 
 # Application definition
 

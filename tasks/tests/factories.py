@@ -34,8 +34,8 @@ class TaskFactory(factory.django.DjangoModelFactory):
     created_by = SubFactory(UserFactory)
     assignee = SubFactory(UserFactory)
     status = fuzzy.FuzzyChoice(
-        [Task.Status.TODO, Task.Status.IN_PROGRESS, 
-         Task.Status.IN_REVIEW, Task.Status.COMPLETED, Task.Status.CANCELLED]
+        [Task.Status.TODO, Task.Status.IN_PROGRESS,
+         Task.Status.IN_REVIEW, Task.Status.COMPLETED, Task.Status.BLOCKED]
     )
     priority = fuzzy.FuzzyChoice(
         [Task.Priority.LOW, Task.Priority.MEDIUM, 
@@ -107,7 +107,7 @@ class TaskDependencyFactory(factory.django.DjangoModelFactory):
 class BlockerDependencyFactory(TaskDependencyFactory):
     """Factory for blocker dependencies."""
     
-    dependency_type = TaskDependency.DependencyType.BLOCKS
+    dependency_type = TaskDependency.DependencyType.FINISH_TO_START
 
 
 class TaskListWithTasksFactory(TaskListFactory):

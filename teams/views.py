@@ -44,8 +44,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     
     queryset = Team.objects.all()
     permission_classes = [IsAuthenticated]
-    lookup_field = 'slug'
-    
+
     def get_serializer_class(self):
         if self.action == 'create':
             return TeamCreateSerializer
@@ -60,9 +59,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         if user.is_superuser or user.role == 'ADMIN':
             return Team.objects.all()
         
-        # Users see teams they're members of or public teams
+        # Users see teams they're members of
         return Team.objects.filter(
-            Q(members=user) | Q(is_public=True)
+            Q(members=user)
         ).distinct()
     
     

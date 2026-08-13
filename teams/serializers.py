@@ -57,10 +57,11 @@ class TeamCreateSerializer(serializers.ModelSerializer):
 class TeamDetailSerializer(TeamSerializer):
     """Detailed team serializer with members and stats."""
     memberships = TeamMembershipSerializer(many=True, read_only=True)
+    members = TeamMembershipSerializer(source='memberships', many=True, read_only=True)
     performance_stats = serializers.SerializerMethodField()
 
     class Meta(TeamSerializer.Meta):
-        fields = TeamSerializer.Meta.fields + ['memberships', 'performance_stats']
+        fields = TeamSerializer.Meta.fields + ['members', 'memberships', 'performance_stats']
 
     def get_performance_stats(self, obj):
         try:

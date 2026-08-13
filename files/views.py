@@ -37,22 +37,27 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter attachments by content type and object"""
         queryset = Attachment.objects.select_related('uploaded_by')
-        
+        user = self.request.user
+
         # Filter by content type and object
         content_type = self.request.query_params.get('content_type')
         object_id = self.request.query_params.get('object_id')
-        
+
         if content_type and object_id:
             try:
                 ct = ContentType.objects.get(model=content_type.lower())
                 queryset = queryset.filter(content_type=ct, object_id=object_id)
             except ContentType.DoesNotExist:
                 queryset = queryset.none()
-        
+        else:
+            # Default to the caller's own uploads so the list endpoint does not
+            # leak every user's attachment metadata.
+            queryset = queryset.filter(uploaded_by=user)
+
         # Filter by user's uploads
         if self.request.query_params.get('my_uploads') == 'true':
-            queryset = queryset.filter(uploaded_by=self.request.user)
-        
+            queryset = queryset.filter(uploaded_by=user)
+
         # Filter by file type
         file_type = self.request.query_params.get('file_type')
         if file_type:
@@ -66,7 +71,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
                         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                     ]
                 )
-        
+
         return queryset
     
     def perform_create(self, serializer):
@@ -138,8 +143,13 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         """
         attachment = self.get_object()
         
-        # Only allow preview for images and PDFs
-        if not (attachment.is_image or attachment.file_type == 'application/pdf'):
+        # Only allow inline preview for PDFs and non-SVG images.
+        # SVG (and html/js) are excluded because serving them inline with their
+        # real MIME type lets embedded scripts execute on the API domain (stored XSS).
+        if not (
+            attachment.file_type == 'application/pdf'
+            or (attachment.is_image and attachment.file_type != 'image/svg+xml')
+        ):
             return Response(
                 {'error': 'Preview not available for this file type'},
                 status=status.HTTP_400_BAD_REQUEST

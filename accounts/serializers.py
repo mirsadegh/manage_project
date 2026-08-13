@@ -5,8 +5,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema_field
 
+
+
 User = get_user_model()
-from drf_spectacular.utils import extend_schema_field
 
 class UserSerializer(serializers.ModelSerializer):
     """Basic user serializer for list views."""
@@ -22,9 +23,14 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'date_joined']
 
     
-    @extend_schema_field(str)
-    def get_full_name(self, obj):
-        return obj.get_full_name()
+    # @extend_schema_field(str)
+    # def get_full_name(self, obj):
+    #     return obj.get_full_name().strip() or obj.username
+    
+    full_name = serializers.CharField(source='get_full_name', 
+                                      read_only=True,
+                                      allow_blank=True
+                                      )
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
@@ -41,9 +47,12 @@ class UserDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'date_joined', 'last_login', 'role']
     
-    @extend_schema_field(str)
-    def get_full_name(self, obj):
-        return obj.get_full_name()
+  
+    
+    full_name = serializers.CharField(source='get_full_name', 
+                                          read_only=True,
+                                          allow_blank=True
+                                          )
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):

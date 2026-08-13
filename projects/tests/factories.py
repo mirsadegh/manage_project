@@ -20,8 +20,8 @@ class ProjectFactory(factory.django.DjangoModelFactory):
          Project.Status.ON_HOLD, Project.Status.COMPLETED, Project.Status.CANCELLED]
     )
     priority = fuzzy.FuzzyChoice(
-        [Project.Priority.LOW, Project.Priority.MEDIUM, 
-         Project.Priority.HIGH, Project.Priority.URGENT]
+        [Project.Priority.LOW, Project.Priority.MEDIUM,
+         Project.Priority.HIGH, Project.Priority.CRITICAL]
     )
     start_date = factory.LazyFunction(lambda: timezone.now().date())
     due_date = factory.LazyAttribute(
