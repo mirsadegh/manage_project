@@ -5,7 +5,7 @@ from django.urls import reverse
 from accounts.models import CustomUser
 from projects.models import Project
 from tasks.models import Task
-from .models import ActivityLog, ActivityFeed
+from activity.models import ActivityLog, ActivityFeed
 
 
 class ActivityLogModelTests(TestCase):

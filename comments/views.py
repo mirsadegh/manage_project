@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.contenttypes.models import ContentType
 from .models import Comment, CommentReaction
 from .serializers import CommentSerializer, CommentCreateSerializer, CommentReactionSerializer
-from .permissions import IsCommentAuthorOrReadOnly
+from .permissions import IsCommentAuthorOrReadOnly, CanAccessProjectComments
 import re
 
 
@@ -27,6 +27,12 @@ class CommentViewSet(viewsets.ModelViewSet):
     
     queryset = Comment.objects.all()
     permission_classes = [IsAuthenticated, IsCommentAuthorOrReadOnly]
+    
+    def get_permissions(self):
+        permission_classes = [IsAuthenticated, CanAccessProjectComments]
+        if self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes.append(IsCommentAuthorOrReadOnly)
+        return [permission() for permission in permission_classes]
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -71,6 +77,14 @@ class CommentViewSet(viewsets.ModelViewSet):
         # Clear old mentions and reprocess
         comment.mentions.all().delete()
         self._process_mentions(comment)
+
+    def destroy(self, request, *args, **kwargs):
+        """Soft delete a comment."""
+        comment = self.get_object()
+        comment.is_deleted = True
+        comment.text = '[This comment has been deleted]'
+        comment.save(update_fields=['is_deleted', 'text', 'updated_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['post'])
     def react(self, request, pk=None):

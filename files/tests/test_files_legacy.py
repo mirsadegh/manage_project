@@ -8,7 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from accounts.models import CustomUser
 from projects.models import Project
 from tasks.models import Task
-from .models import Attachment
+from files.models import Attachment
 
 
 class FileUploadTests(APITestCase):

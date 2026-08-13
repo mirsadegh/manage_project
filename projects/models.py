@@ -232,7 +232,10 @@ class ProjectMember(models.Model):
         choices=Role.choices, 
         default=Role.MEMBER
     )  
-    
+
+    is_active = models.BooleanField(default=True)
+    left_at = models.DateTimeField(null=True, blank=True)
+
     joined_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:

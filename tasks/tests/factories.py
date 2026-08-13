@@ -47,7 +47,7 @@ class TaskFactory(factory.django.DjangoModelFactory):
     due_date = factory.LazyAttribute(
         lambda obj: obj.start_date + timedelta(days=fuzzy.FuzzyInteger(1, 30).fuzz())
     )
-    completed_date = factory.LazyAttribute(
+    completed_at = factory.LazyAttribute(
         lambda obj: timezone.now() if obj.status == Task.Status.COMPLETED else None
     )
     is_active = True
@@ -64,7 +64,7 @@ class CompletedTaskFactory(TaskFactory):
     """Factory for completed tasks."""
     
     status = Task.Status.COMPLETED
-    completed_date = factory.LazyFunction(timezone.now)
+    completed_at = factory.LazyFunction(timezone.now)
     actual_hours = factory.LazyAttribute(
         lambda obj: obj.estimated_hours * fuzzy.FuzzyDecimal(0.8, 1.5).fuzz()
     )

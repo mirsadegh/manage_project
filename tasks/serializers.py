@@ -25,8 +25,9 @@ class TaskListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = TaskList
-        fields = ['id', 'name', 'description', 'position', 'task_count', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'project', 'name', 'description', 'created_by', 'is_active',
+                  'order', 'position', 'task_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
         
     def get_task_count(self, obj):
         return obj.tasks.count()
@@ -40,6 +41,13 @@ class TaskSerializer(serializers.ModelSerializer):
     assignee_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     created_by = UserSerializer(read_only=True)
     labels = TaskLabelSerializer(source='label_assignments',many=True, read_only=True)
+    depends_on = serializers.PrimaryKeyRelatedField(
+        queryset=Task.objects.all(),
+        many=True,
+        write_only=True,
+        required=False,
+        allow_empty=True,
+    )
     
     is_overdue = serializers.ReadOnlyField()
     
@@ -50,9 +58,19 @@ class TaskSerializer(serializers.ModelSerializer):
                     'parent_task', 'assignee', 'assignee_id', 'created_by',
                     'status', 'priority', 'start_date', 'due_date',
                     'completed_at', 'estimated_hours', 'actual_hours',
-                    'position', 'labels', 'is_overdue', 'created_at', 'updated_at'
+                    'position', 'order', 'is_active', 'depends_on',
+                    'labels', 'is_overdue', 'created_at', 'updated_at'
                   ]
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        start_date = attrs.get('start_date')
+        due_date = attrs.get('due_date')
+        if start_date and due_date and start_date > due_date:
+            raise serializers.ValidationError({
+                'due_date': 'Due date must be after start date.'
+            })
+        return attrs
 
 
 

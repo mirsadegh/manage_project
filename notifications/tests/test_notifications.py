@@ -34,7 +34,7 @@ class TestNotificationCreation:
         response = authenticated_client.post(reverse('notification-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Notification
+        from notifications.models import Notification
         assert Notification.objects.count() == 1
         assert Notification.objects.first().recipient == user
     
@@ -52,7 +52,7 @@ class TestNotificationCreation:
         response = authenticated_client.post(reverse('notification-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Notification
+        from notifications.models import Notification
         notification = Notification.objects.first()
         assert notification.created_at is not None
         assert notification.read_at is None  # Should be None for unread notification
@@ -178,7 +178,7 @@ class TestNotificationActions:
         response = authenticated_client.post(reverse('notification-mark-all-read'))
         
         assert response.status_code == status.HTTP_200_OK
-        from .models import Notification
+        from notifications.models import Notification
         unread_count = Notification.objects.filter(recipient=user, is_read=False).count()
         assert unread_count == 0
     
@@ -194,7 +194,7 @@ class TestNotificationActions:
         )
         
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        from .models import Notification
+        from notifications.models import Notification
         assert not Notification.objects.filter(id=notification.id).exists()
 
 
@@ -252,7 +252,7 @@ class TestNotificationPreferences:
         response = authenticated_client.post(reverse('notification-preference-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import NotificationPreference
+        from notifications.models import NotificationPreference
         assert NotificationPreference.objects.count() == 1
 
 
@@ -267,7 +267,7 @@ class TestNotificationGeneration:
         user = UserFactory()
         mention = CommentMentionFactory(mentioned_user=user)
         
-        from .models import Notification
+        from notifications.models import Notification
         notification = Notification.objects.filter(
             recipient=user,
             notification_type='MENTION'
@@ -282,7 +282,7 @@ class TestNotificationGeneration:
         assignee = UserFactory()
         
         # Simulate task assignment
-        from .models import Notification
+        from notifications.models import Notification
         notification = Notification.objects.create(
             recipient=assignee,
             sender=task.created_by,
@@ -302,7 +302,7 @@ class TestNotificationGeneration:
         user = UserFactory()
         invitation = TeamInvitationFactory(invited_user=user)
         
-        from .models import Notification
+        from notifications.models import Notification
         notification = Notification.objects.filter(
             recipient=user,
             notification_type='PROJECT_INVITE'
@@ -403,7 +403,7 @@ class TestBatchNotifications:
         )
         
         assert len(notifications) == 5
-        from .models import Notification
+        from notifications.models import Notification
         assert Notification.objects.filter(notification_type='PROJECT_UPDATE').count() == 5
     
     def test_create_task_notifications(self):
@@ -417,7 +417,7 @@ class TestBatchNotifications:
         )
         
         assert len(notifications) == 3
-        from .models import Notification
+        from notifications.models import Notification
         for notification in notifications:
             assert notification.content_object == task
 

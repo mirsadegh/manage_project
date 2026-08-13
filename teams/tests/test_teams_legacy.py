@@ -5,7 +5,7 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
 from accounts.models import CustomUser
-from .models import Team, TeamMembership, TeamInvitation
+from teams.models import Team, TeamMembership, TeamInvitation
 
 
 class TeamModelTests(TestCase):

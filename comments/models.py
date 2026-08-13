@@ -47,6 +47,10 @@ class Comment(models.Model):
         default=False,
         help_text="Whether this comment has been edited"
     )
+    is_deleted = models.BooleanField(
+        default=False,
+        help_text="Whether this comment has been soft-deleted"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -87,6 +91,13 @@ class Comment(models.Model):
         thread = [self]
         thread.extend(self._get_descendants())
         return thread
+
+    def get_thread_root(self):
+        """Get the root comment of this comment's thread"""
+        root = self
+        while root.parent:
+            root = root.parent
+        return root
     
     def _get_descendants(self):
         """Recursively get all descendant comments"""
@@ -113,6 +124,12 @@ class CommentMention(models.Model):
         on_delete=models.CASCADE,
         related_name='comment_mentions'
     )
+    mentioned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='comment_mentions_made'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -134,6 +151,7 @@ class CommentReaction(models.Model):
         LAUGH = 'LAUGH', '😄'
         CONFUSED = 'CONFUSED', '😕'
         CELEBRATE = 'CELEBRATE', '🎉'
+        HEART = 'HEART', '💓'
     
     comment = models.ForeignKey(
         Comment,

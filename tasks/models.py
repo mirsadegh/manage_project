@@ -17,12 +17,22 @@ class TaskList(models.Model):
     )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_task_lists'
+    )
+    is_active = models.BooleanField(default=True)
+    order = models.IntegerField(default=0)
     position = models.IntegerField(default=0)
     
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        ordering = ['position', 'created_at']
+        ordering = ['order', 'position', 'created_at']
         unique_together = ['project', 'name']
     
     def __str__(self):
@@ -132,6 +142,8 @@ class Task(models.Model):
     
     # Position in list
     position = models.IntegerField(default=0)
+    order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
     
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)

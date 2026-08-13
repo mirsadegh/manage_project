@@ -4,6 +4,7 @@ from django.utils import timezone
 from accounts.tests.factories import UserFactory
 from projects.tests.factories import ProjectFactory
 from tasks.tests.factories import TaskFactory
+from tasks.models import Task
 from ..models import Comment, CommentReaction, CommentMention
 
 
@@ -13,7 +14,6 @@ class CommentFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Comment
     
-    content_type = factory.LazyAttribute(lambda obj: obj._get_content_type())
     object_id = fuzzy.FuzzyInteger(1, 1000)
     author = SubFactory(UserFactory)
     text = factory.Faker("paragraph", nb_sentences=3)
@@ -26,12 +26,14 @@ class CommentFactory(factory.django.DjangoModelFactory):
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
         # Handle content_object properly
+        from django.contrib.contenttypes.models import ContentType
         content_object = kwargs.pop('content_object', None)
         if content_object:
-            instance = model_class(**kwargs)
-            instance.content_object = content_object
-            instance.save()
-            return instance
+            kwargs['content_type'] = ContentType.objects.get_for_model(content_object)
+            kwargs['object_id'] = content_object.id
+        elif 'content_type' not in kwargs:
+            # Default to Task as the commentable content
+            kwargs['content_type'] = ContentType.objects.get_for_model(Task)
         return super()._create(model_class, *args, **kwargs)
 
 
@@ -79,11 +81,11 @@ class CommentReactionFactory(factory.django.DjangoModelFactory):
     comment = SubFactory(CommentFactory)
     user = SubFactory(UserFactory)
     reaction_type = fuzzy.FuzzyChoice(
-        [CommentReaction.ReactionType.LIKE, 
-         CommentReaction.ReactionType.DISLIKE,
+        [CommentReaction.ReactionType.LIKE,
+         CommentReaction.ReactionType.LOVE,
          CommentReaction.ReactionType.LAUGH,
-         CommentReaction.ReactionType.HEART,
-         CommentReaction.ReactionType.ANGRY]
+         CommentReaction.ReactionType.CONFUSED,
+         CommentReaction.ReactionType.CELEBRATE]
     )
     created_at = factory.LazyFunction(timezone.now)
 

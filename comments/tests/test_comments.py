@@ -33,7 +33,7 @@ class TestCommentCreation:
         response = authenticated_client.post(reverse('comment-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Comment
+        from comments.models import Comment
         assert Comment.objects.count() == 1
         assert Comment.objects.first().author == user
         assert Comment.objects.first().text == 'This is a test comment on a task'
@@ -52,7 +52,7 @@ class TestCommentCreation:
         response = authenticated_client.post(reverse('comment-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Comment
+        from comments.models import Comment
         assert Comment.objects.count() == 1
         assert Comment.objects.first().content_object == project
     
@@ -106,7 +106,7 @@ class TestCommentReplies:
         response = authenticated_client.post(reverse('comment-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Comment
+        from comments.models import Comment
         reply = Comment.objects.get(text='This is a reply')
         assert reply.parent == parent_comment
         assert reply.is_reply
@@ -130,7 +130,7 @@ class TestCommentReplies:
         response = authenticated_client.post(reverse('comment-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Comment
+        from comments.models import Comment
         deep_reply = Comment.objects.get(text='This is a reply to a reply')
         assert deep_reply.parent == reply
         assert deep_reply.get_thread_root() == parent
@@ -259,7 +259,7 @@ class TestCommentReactions:
         )
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import CommentReaction
+        from comments.models import CommentReaction
         assert CommentReaction.objects.count() == 1
         assert CommentReaction.objects.first().user == user
         assert CommentReaction.objects.first().reaction_type == 'LIKE'
@@ -283,7 +283,7 @@ class TestCommentReactions:
         )
         
         assert response.status_code == status.HTTP_200_OK
-        from .models import CommentReaction
+        from comments.models import CommentReaction
         reaction = CommentReaction.objects.get(user=user, comment=comment)
         assert reaction.reaction_type == 'HEART'
     
@@ -301,7 +301,7 @@ class TestCommentReactions:
         )
         
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        from .models import CommentReaction
+        from comments.models import CommentReaction
         assert not CommentReaction.objects.filter(id=reaction.id).exists()
     
     def test_get_comment_reactions(self, authenticated_client, task):
@@ -338,7 +338,7 @@ class TestCommentMentions:
         assert response.status_code == status.HTTP_201_CREATED
         
         # Check mention was created
-        from .models import CommentMention
+        from comments.models import CommentMention
         mention = CommentMention.objects.first()
         assert mention.mentioned_user == mentioned_user
         assert mention.mentioned_by == user
@@ -369,7 +369,7 @@ class TestCommentMentions:
         
         assert response.status_code == status.HTTP_201_CREATED
         
-        from .models import CommentMention
+        from comments.models import CommentMention
         assert CommentMention.objects.count() == 3
     
     def test_invalid_mention_ignored(self, authenticated_client, task, user):
@@ -388,7 +388,7 @@ class TestCommentMentions:
         assert response.status_code == status.HTTP_201_CREATED
         
         # Should not create mention for nonexistent user
-        from .models import CommentMention
+        from comments.models import CommentMention
         assert CommentMention.objects.count() == 0
 
 

@@ -1,9 +1,9 @@
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from notifications.utils import send_realtime_notification, broadcast_project_update
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Task, TaskList, TaskLabel
+from .models import Task, TaskList, TaskLabel, TaskDependency
 from .serializers import (
     TaskSerializer,
     TaskDetailSerializer,
@@ -37,6 +37,9 @@ class TaskListViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['project']
 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
 
 class TaskViewSet(viewsets.ModelViewSet):
     """
@@ -56,7 +59,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     """
     queryset = Task.objects.all()
     pagination_class = TaskPagination
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['project', 'task_list', 'status', 'priority', 'assignee']
     search_fields = ['title', 'description']
     ordering_fields = ['created_at', 'due_date', 'priority', 'position']
@@ -100,7 +103,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Task.objects.filter(
             Q(project__owner=user) |
             Q(project__manager=user) |
-            Q(project__members__user=user) |
+            Q(project__members__user=user, project__members__is_active=True) |
             Q(assignee=user) |
             Q(created_by=user)
         ).distinct()
@@ -111,11 +114,12 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         This method sets the 'created_by' field of the Task to the current user
         making the request, ensuring that the creator of the task is recorded.
-
-        Args:
-            serializer: The serializer instance containing validated data for the new Task.
+        It also creates TaskDependency rows for any `depends_on` tasks.
         """
+        depends_on = serializer.validated_data.pop('depends_on', [])
         task = serializer.save(created_by=self.request.user)
+        for dependency in depends_on:
+            TaskDependency.objects.create(task=task, depends_on=dependency)
         
         if task.assignee:
             notification_data = {
@@ -150,18 +154,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         try:
             from accounts.models import CustomUser
             user = CustomUser.objects.get(id=user_id)
-            
-            # Check if user is a project member
-            from projects.models import ProjectMember
-            if not ProjectMember.objects.filter(
-                project=task.project,
-                user=user
-            ).exists() and task.project.owner != user:
-                return Response(
-                    {'error': 'User is not a member of this project'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
+
             task.assignee = user
             task.save()
             
@@ -188,6 +181,23 @@ class TaskViewSet(viewsets.ModelViewSet):
             )
         
         old_status = task.status
+
+        # Prevent completing a task whose dependencies are not yet complete
+        if new_status == Task.Status.COMPLETED:
+            incomplete = task.dependencies.filter(
+                depends_on__status__in=['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED']
+            )
+            if incomplete.exists():
+                return Response(
+                    {
+                        'error': 'Cannot complete task with incomplete dependencies',
+                        'blocking_tasks': list(
+                            incomplete.values_list('depends_on_id', flat=True)
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         task.status = new_status
         
         # Set completed_at when marking as completed
@@ -223,6 +233,18 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     
+    @action(detail=True, methods=['post'])
+    def reorder(self, request, pk=None):
+        """Reorder tasks within a task list."""
+        task_orders = request.data.get('task_orders', [])
+        for item in task_orders:
+            Task.objects.filter(
+                id=item.get('id'),
+                task_list_id=pk,
+            ).update(order=item.get('order', 0))
+        return Response({'message': 'Tasks reordered successfully'})
+
+
     @action(detail=False, methods=['get'])
     def my_tasks(self, request):
         """Get tasks assigned to current user"""

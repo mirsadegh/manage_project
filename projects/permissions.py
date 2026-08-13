@@ -31,10 +31,11 @@ class IsProjectMember(permissions.BasePermission):
         if request.user.is_superuser or getattr(request.user, 'role', None) == 'ADMIN':
             return True
         
-        # Check if user is a member
+        # Check if user is an active member
         is_member = ProjectMember.objects.filter(
             project=project,
-            user=request.user
+            user=request.user,
+            is_active=True
         ).exists()
         
         return is_member or project.owner == request.user or project.is_public

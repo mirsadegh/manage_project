@@ -85,3 +85,34 @@ def send_notification_async(recipient_id, notification_type, title, message, obj
         return f'Notification {notification.id} created for user {user.username}'
     except CustomUser.DoesNotExist:
         return f'User {recipient_id} not found'
+
+
+@shared_task
+def send_email_notification(notification_id):
+    """
+    Send an email for a notification (if the recipient has email enabled
+    for that notification type).
+    """
+    try:
+        notification = Notification.objects.get(id=notification_id)
+    except Notification.DoesNotExist:
+        return f'Notification {notification_id} not found'
+
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    try:
+        send_mail(
+            subject=notification.title,
+            message=notification.message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[notification.recipient.email],
+            fail_silently=True,
+        )
+    except Exception:
+        return f'Email failed for notification {notification_id}'
+
+    notification.is_email_sent = True
+    notification.email_sent_at = timezone.now()
+    notification.save(update_fields=['is_email_sent', 'email_sent_at'])
+    return f'Email sent for notification {notification_id}'

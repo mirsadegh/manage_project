@@ -58,7 +58,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         elif self.action in ['add_member', 'remove_member']:
             permission_classes = [CanManageProjectMembers]
         else:
-            permission_classes = [permissions.IsAuthenticated]
+            permission_classes = [permissions.IsAuthenticated, IsProjectMember]
         
         return [permission() for permission in permission_classes]
     
@@ -80,8 +80,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
             return base_qs
 
-        # Users see projects they own, manage, or are members of
-        if self.action in ['list', 'retrieve']:
+        # Users see projects they own, manage, or are members of.
+        # Only `list` filters here; object-level permissions on detail
+        # actions (retrieve, update, add_member, ...) decide access so
+        # unauthorized users receive 403 rather than a 404.
+        if self.action == 'list':
             return base_qs.filter(
                 Q(owner=user) |
                 Q(manager=user) |
@@ -129,15 +132,24 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer = ProjectMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Check if user is already a member
+        # Check if user is already an active member
         user_id = serializer.validated_data['user_id']
-        if ProjectMember.objects.filter(project=project, user_id=user_id).exists():
+        existing = ProjectMember.objects.filter(project=project, user_id=user_id).first()
+        if existing and existing.is_active:
             return Response(
                 {'error': 'User is already a member of this project'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        member = serializer.save(project=project)
+
+        if existing and not existing.is_active:
+            # Re-activate a member who had left
+            existing.is_active = True
+            existing.left_at = None
+            existing.role = serializer.validated_data.get('role', existing.role)
+            existing.save(update_fields=['is_active', 'left_at', 'role'])
+            member = existing
+        else:
+            member = serializer.save(project=project)
           # Notify the new member
         notification_data = {
             'type': 'PROJECT_INVITE',

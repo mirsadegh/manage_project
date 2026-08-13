@@ -19,13 +19,14 @@ class CanManageTask(permissions.BasePermission):
                 from projects.models import Project, ProjectMember
                 project = Project.objects.get(id=project_id)
                 
-                # چک کنیم کاربر عضو پروژه است
+                # چک کنیم کاربر عضو فعال پروژه است
                 is_member = (
                     project.owner == request.user or
                     project.manager == request.user or
                     ProjectMember.objects.filter(
                         project=project, 
-                        user=request.user
+                        user=request.user,
+                        is_active=True
                     ).exists()
                 )
                 
@@ -49,11 +50,12 @@ class CanManageTask(permissions.BasePermission):
         if user.role in ['ADMIN', 'PM']:
             return True
         
-        # Team Lead اگر عضو پروژه باشد
+        # Team Lead اگر عضو فعال پروژه باشد
         if user.role == 'TL':
             return ProjectMember.objects.filter(
                 project=project, 
-                user=user
+                user=user,
+                is_active=True
             ).exists()
         
         # Owner و Manager پروژه
@@ -62,6 +64,10 @@ class CanManageTask(permissions.BasePermission):
         
         # سازنده تسک
         if obj.created_by == user:
+            return True
+        
+        # مسئول تسک (assignee) می‌تواند تسک را ویرایش کند
+        if obj.assignee == user:
             return True
         
         return False

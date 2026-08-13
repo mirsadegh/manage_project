@@ -34,10 +34,10 @@ class CommentSerializer(serializers.ModelSerializer):
         model = Comment
         fields = [
             'id', 'author', 'text', 'parent', 'content_type_id', 'object_id',
-            'is_edited', 'created_at', 'updated_at', 'replies', 'reactions',
+            'is_edited', 'is_deleted', 'created_at', 'updated_at', 'replies', 'reactions',
             'reply_count', 'is_reply'
         ]
-        read_only_fields = ['id', 'author', 'is_edited', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'author', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
     
     def get_replies(self, obj):
         """Get direct replies to this comment"""

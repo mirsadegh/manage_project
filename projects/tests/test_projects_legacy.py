@@ -3,7 +3,7 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
 from accounts.models import CustomUser
-from .models import Project, ProjectMember
+from projects.models import Project, ProjectMember
 
 
 class ProjectCreationTests(APITestCase):
