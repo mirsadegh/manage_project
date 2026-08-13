@@ -72,7 +72,8 @@ class TaskPagination(PageNumberPagination):
     def get_paginated_response(self, data):
         # Calculate task statistics using single aggregation query for better performance
         from tasks.models import Task
-        from django.db.models import Count, Q, Sum
+        from django.db.models import Count, Q, Sum, Value
+        from django.db.models import DecimalField
         from django.db.models.functions import Coalesce
         from datetime import date
 
@@ -83,8 +84,8 @@ class TaskPagination(PageNumberPagination):
             todo_tasks=Count('id', filter=Q(status='TODO')),
             blocked_tasks=Count('id', filter=Q(status='BLOCKED')),
             in_review_tasks=Count('id', filter=Q(status='IN_REVIEW')),
-            total_estimated_hours=Coalesce(Sum('estimated_hours'), 0.0),
-            total_actual_hours=Coalesce(Sum('actual_hours'), 0.0),
+            total_estimated_hours=Coalesce(Sum('estimated_hours'), Value(0), output_field=DecimalField()),
+            total_actual_hours=Coalesce(Sum('actual_hours'), Value(0), output_field=DecimalField()),
             overdue_tasks=Count(
                 'id',
                 filter=Q(due_date__lt=date.today()) & ~Q(status='COMPLETED'),

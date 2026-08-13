@@ -68,6 +68,8 @@ class TaskViewSet(viewsets.ModelViewSet):
         """Custom permissions based on action."""
         if self.action in ['list', 'retrieve']:
             permission_classes = [permissions.IsAuthenticated]
+            if self.action == 'retrieve':
+                permission_classes = [CanManageTask]
         elif self.action == 'create':
             permission_classes = [CanManageTask]
         elif self.action in ['update', 'partial_update']:
@@ -90,10 +92,15 @@ class TaskViewSet(viewsets.ModelViewSet):
         return TaskSerializer
     
     def get_queryset(self):
-        """Filter tasks based on user permissions"""
+        """Filter tasks based on user permissions for list views only."""
         user = self.request.user
         
         if user.is_superuser or user.role == 'ADMIN':
+            return Task.objects.all()
+        
+        # Detail actions use the full queryset so object-level permissions
+        # can decide between 403 and 404.
+        if self.action not in ['list', 'my_tasks', 'all_tasks']:
             return Task.objects.all()
         
         # Users see tasks from projects they have access to
@@ -236,8 +243,27 @@ class TaskViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def reorder(self, request, pk=None):
         """Reorder tasks within a task list."""
+        import ast
+        import json
+
         task_orders = request.data.get('task_orders', [])
+        if isinstance(task_orders, str):
+            try:
+                task_orders = json.loads(task_orders)
+            except (json.JSONDecodeError, TypeError):
+                task_orders = []
+
         for item in task_orders:
+            if isinstance(item, str):
+                try:
+                    item = json.loads(item)
+                except (json.JSONDecodeError, TypeError):
+                    try:
+                        item = ast.literal_eval(item)
+                    except (ValueError, SyntaxError):
+                        continue
+            if not isinstance(item, dict):
+                continue
             Task.objects.filter(
                 id=item.get('id'),
                 task_list_id=pk,

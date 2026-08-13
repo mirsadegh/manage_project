@@ -32,7 +32,7 @@ class TestTaskCreation:
         response = authenticated_client.post(reverse('task-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import Task
+        from tasks.models import Task
         assert Task.objects.count() == 1
         assert Task.objects.first().created_by == user
     
@@ -122,7 +122,7 @@ class TestTaskFilters:
     def test_filter_by_status(self, manager_client, multiple_tasks):
         """Test filtering tasks by status"""
         # Mark some tasks as completed
-        from .models import Task
+        from tasks.models import Task
         for task in Task.objects.all()[:2]:
             task.status = Task.Status.COMPLETED
             task.save()
@@ -137,7 +137,7 @@ class TestTaskFilters:
     def test_filter_by_priority(self, manager_client, multiple_tasks):
         """Test filtering tasks by priority"""
         # Create high priority tasks
-        from .models import Task
+        from tasks.models import Task
         for task in Task.objects.all()[:2]:
             task.priority = Task.Priority.HIGH
             task.save()
@@ -152,7 +152,7 @@ class TestTaskFilters:
     def test_search_tasks(self, manager_client, multiple_tasks):
         """Test searching tasks"""
         # Update a task title for search testing
-        from .models import Task
+        from tasks.models import Task
         task = Task.objects.first()
         task.title = "Unique Search Term"
         task.save()
@@ -187,7 +187,7 @@ class TestTaskDependencies:
         
         assert response.status_code == status.HTTP_201_CREATED
         
-        from .models import TaskDependency
+        from tasks.models import TaskDependency
         assert TaskDependency.objects.filter(
             task_id=response.data['id'],
             depends_on_id=dependency_task.id
@@ -284,14 +284,14 @@ class TestTaskListOperations:
         response = manager_client.post(reverse('tasklist-list'), data)
         
         assert response.status_code == status.HTTP_201_CREATED
-        from .models import TaskList
+        from tasks.models import TaskList
         assert TaskList.objects.count() == 1
         assert TaskList.objects.first().created_by == manager_user
     
     def test_reorder_tasks(self, manager_client, multiple_tasks):
         """Test reordering tasks within a list"""
         # Get task IDs and reorder them
-        from .models import Task
+        from tasks.models import Task
         tasks = list(Task.objects.all())
         task_ids = [task.id for task in tasks]
         
@@ -315,7 +315,7 @@ class TestTaskPerformance:
     
     def test_task_completion_rate_calculation(self, manager_client, project_with_tasks):
         """Test completion rate is calculated correctly"""
-        from .models import Task
+        from tasks.models import Task
         
         # Mark half the tasks as completed
         tasks = list(Task.objects.all())
