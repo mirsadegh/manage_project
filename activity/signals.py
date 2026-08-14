@@ -111,7 +111,7 @@ def log_member_left(sender, instance, **kwargs):
 @receiver(post_save, sender=Comment)
 def log_comment_activity(sender, instance, created, **kwargs):
     """Log when a comment is created"""
-    if created:
+    if created and instance.content_object is not None:
         ActivityLog.objects.create(
             user=instance.author,
             action=ActivityLog.Action.COMMENTED,

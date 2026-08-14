@@ -1,7 +1,10 @@
 import subprocess
 import logging
-import clamd
 
+try:
+    import clamd
+except ImportError:
+    clamd = None
 
 
 logger = logging.getLogger('files')
@@ -11,6 +14,9 @@ class VirusScanner:
     """
     Virus scanner using ClamAV.
     Install ClamAV: sudo apt-get install clamav clamav-daemon
+    The clamd dependency is optional; when it is not installed virus
+    scanning is skipped (the file is treated as safe) instead of crashing
+    the whole files application at import time.
     """
 
     @staticmethod
@@ -19,6 +25,10 @@ class VirusScanner:
         Scan a file for viruses using ClamAV daemon.
         Returns (is_safe, message)
         """
+        if clamd is None:
+            logger.warning("ClamAV (clamd) not installed - skipping virus scan")
+            return True, "Virus scanner unavailable - scan skipped"
+
         try:
             cd = clamd.ClamdUnixSocket()
             # Test connection
