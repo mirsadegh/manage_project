@@ -247,11 +247,19 @@ class TaskViewSet(viewsets.ModelViewSet):
         import json
 
         task_orders = request.data.get('task_orders', [])
+        # Form-encoded payloads arrive as repeated 'task_orders' keys holding
+        # Python-repr strings, e.g. "{'id': 1, 'order': 0}".
+        if hasattr(request.data, 'getlist') and len(request.data.getlist('task_orders')) > 1:
+            task_orders = request.data.getlist('task_orders')
         if isinstance(task_orders, str):
             try:
                 task_orders = json.loads(task_orders)
             except (json.JSONDecodeError, TypeError):
-                task_orders = []
+                try:
+                    parsed = ast.literal_eval(task_orders)
+                    task_orders = parsed if isinstance(parsed, list) else [parsed]
+                except (ValueError, SyntaxError):
+                    task_orders = []
 
         for item in task_orders:
             if isinstance(item, str):

@@ -195,8 +195,14 @@ class TestTaskDependencies:
     
     def test_cannot_complete_task_with_incomplete_dependencies(self, developer_client, task_with_dependencies, developer_user):
         """Test cannot complete task with incomplete dependencies"""
+        from tasks.models import TaskDependency
         task_with_dependencies.assignee = developer_user
         task_with_dependencies.save()
+
+        # The dependency must be incomplete for this rule to apply
+        dependency = TaskDependency.objects.get(task=task_with_dependencies)
+        dependency.depends_on.status = 'IN_PROGRESS'
+        dependency.depends_on.save()
         
         data = {'status': 'COMPLETED'}
         response = developer_client.post(
@@ -213,7 +219,9 @@ class TestTaskTimeTracking:
     
     def test_update_actual_hours(self, developer_client, task, developer_user):
         """Test updating actual hours worked"""
+        from tasks.models import Task
         task.assignee = developer_user
+        task.status = Task.Status.IN_PROGRESS
         task.save()
         
         data = {'actual_hours': 5.5}
@@ -299,7 +307,7 @@ class TestTaskListOperations:
         reversed_ids = list(reversed(task_ids))
         
         data = {'task_orders': [{'id': tid, 'order': i} for i, tid in enumerate(reversed_ids)]}
-        response = manager_client.post(reverse('task-reorder', kwargs={'pk': tasks[0].task_list.id}), data)
+        response = manager_client.post(reverse('task-reorder', kwargs={'pk': tasks[0].task_list.id}), data, format='json')
         
         assert response.status_code == status.HTTP_200_OK
         
@@ -316,12 +324,15 @@ class TestTaskPerformance:
     def test_task_completion_rate_calculation(self, manager_client, project_with_tasks):
         """Test completion rate is calculated correctly"""
         from tasks.models import Task
-        
-        # Mark half the tasks as completed
+
+        # Start from a known state: all tasks TODO, then mark half completed
         tasks = list(Task.objects.all())
+        for task in tasks:
+            task.status = Task.Status.TODO
+        Task.objects.bulk_update(tasks, ['status'])
         for task in tasks[:len(tasks)//2]:
             task.status = Task.Status.COMPLETED
-            task.save()
+        Task.objects.bulk_update(tasks, ['status'])
         
         response = manager_client.get(reverse('task-list'))
         

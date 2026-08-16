@@ -80,9 +80,13 @@ class HighPriorityTaskFactory(TaskFactory):
 
 class OverdueTaskFactory(TaskFactory):
     """Factory for overdue tasks."""
-    
-    due_date = factory.LazyFunction(
-        lambda: (timezone.now() - timedelta(days=fuzzy.FuzzyInteger(1, 10).fuzz())).date()
+
+    # start_date must stay before due_date (model validation) while both remain in the past
+    start_date = factory.LazyFunction(
+        lambda: (timezone.now() - timedelta(days=fuzzy.FuzzyInteger(15, 30).fuzz())).date()
+    )
+    due_date = factory.LazyAttribute(
+        lambda obj: obj.start_date + timedelta(days=fuzzy.FuzzyInteger(1, 10).fuzz())
     )
     status = fuzzy.FuzzyChoice([Task.Status.TODO, Task.Status.IN_PROGRESS])
 

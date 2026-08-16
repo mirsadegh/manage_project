@@ -79,7 +79,6 @@ class BaseUserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(
         source='get_full_name',
         read_only=True,
-        allow_blank=True,
     )
 
     class Meta:
