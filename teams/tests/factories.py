@@ -13,8 +13,6 @@ class TeamFactory(factory.django.DjangoModelFactory):
     
     name = factory.Faker("company")
     description = factory.Faker("paragraph", nb_sentences=3)
-    lead = SubFactory(ManagerUserFactory)
-    is_active = True
     created_at = factory.LazyFunction(timezone.now)
     updated_at = factory.LazyFunction(timezone.now)
     
@@ -39,9 +37,16 @@ class TeamWithMembersFactory(TeamFactory):
 
 
 class InactiveTeamFactory(TeamFactory):
-    """Factory for inactive teams."""
-    
-    is_active = False
+    """Factory for teams with an inactive (left) membership example.
+
+    Team no longer has an `is_active` flag; represent inactivity via its
+    memberships instead.
+    """
+
+    @factory.post_generation
+    def inactive_membership(self, create, extracted, **kwargs):
+        if create:
+            InactiveTeamMembershipFactory(team=self)
 
 
 class TeamMembershipFactory(factory.django.DjangoModelFactory):
@@ -53,9 +58,9 @@ class TeamMembershipFactory(factory.django.DjangoModelFactory):
     team = SubFactory(TeamFactory)
     user = SubFactory(UserFactory)
     role = fuzzy.FuzzyChoice(
-        [TeamMembership.Role.MEMBER, 
+        [TeamMembership.Role.MEMBER,
          TeamMembership.Role.LEAD,
-         TeamMembership.Role.VIEWER]
+         TeamMembership.Role.CO_LEAD]
     )
     is_active = True
     joined_at = factory.LazyFunction(timezone.now)
@@ -69,9 +74,9 @@ class TeamLeadMembershipFactory(TeamMembershipFactory):
 
 
 class TeamViewerMembershipFactory(TeamMembershipFactory):
-    """Factory for team viewer memberships."""
+    """Factory for team co-lead memberships."""
     
-    role = TeamMembership.Role.VIEWER
+    role = TeamMembership.Role.CO_LEAD
 
 
 class InactiveTeamMembershipFactory(TeamMembershipFactory):
@@ -93,11 +98,10 @@ class TeamInvitationFactory(factory.django.DjangoModelFactory):
     role = fuzzy.FuzzyChoice(
         [TeamMembership.Role.MEMBER, 
          TeamMembership.Role.LEAD,
-         TeamMembership.Role.VIEWER]
+         TeamMembership.Role.CO_LEAD]
     )
     status = TeamInvitation.Status.PENDING
     message = factory.Faker("paragraph", nb_sentences=2)
-    invited_at = factory.LazyFunction(timezone.now)
     responded_at = None
     
     @factory.post_generation
@@ -145,22 +149,20 @@ class ExpiredTeamInvitationFactory(TeamInvitationFactory):
     """Factory for expired team invitations."""
     
     status = TeamInvitation.Status.EXPIRED
-    invited_at = factory.LazyFunction(
-        lambda: timezone.now() - timezone.timedelta(days=8)
-    )
 
 
 class TeamInvitationByEmailFactory(TeamInvitationFactory):
-    """Factory for team invitations by email (user not yet registered)."""
-    
+    """Factory for team invitations where the invited user is not yet registered.
+
+    Note: TeamInvitation no longer has an `email` column; the invited user must
+    exist, so this behaves identically to TeamInvitationFactory.
+    """
+
     invited_user = None
-    email = factory.Faker("email")
-    
+
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
-        # Handle email-based invitations
-        if 'invited_user' not in kwargs and 'email' in kwargs:
-            kwargs['invited_user'] = None
+        # Invited user is created lazily by the SubFactory when None.
         return super()._create(model_class, *args, **kwargs)
 
 
@@ -174,7 +176,7 @@ class TeamWorkflowFactory:
             lead = ManagerUserFactory()
         
         # Create team
-        team = TeamFactory(lead=lead)
+        team = TeamFactory()
         
         # Add lead as member
         TeamLeadMembershipFactory(team=team, user=lead)

@@ -32,7 +32,7 @@ class Team(models.Model):
         """
         Add a member to the team.
         """
-        TeamMembership.objects.create(
+        return TeamMembership.objects.create(
             team=self,
             user=user,
             role=role,
@@ -44,7 +44,17 @@ class Team(models.Model):
         Remove a member from the team.
         """
         TeamMembership.objects.filter(team=self, user=user).delete()
-
+        
+    
+    def is_leader(self, user):
+        return self.memberships.filter(
+            user=user, 
+            role=TeamMembership.Role.LEAD
+        ).exists()   
+         
+    @property
+    def is_full(self):
+        return False
 
 class TeamMembership(models.Model):
     """

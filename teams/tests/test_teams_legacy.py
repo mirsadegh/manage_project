@@ -20,15 +20,21 @@ class TeamModelTests(TestCase):
         )
         self.team = Team.objects.create(
             name='Development Team',
-            description='Main dev team',
-            lead=self.user
+            description='Main dev team'
+        )
+        TeamMembership.objects.create(
+            team=self.team,
+            user=self.user,
+            role=TeamMembership.Role.LEAD
         )
     
     def test_team_creation(self):
         """Test creating a team"""
         self.assertEqual(self.team.name, 'Development Team')
-        self.assertEqual(self.team.lead, self.user)
-        self.assertTrue(self.team.is_active)
+        self.assertEqual(
+            self.team.memberships.get(role=TeamMembership.Role.LEAD).user,
+            self.user
+        )
     
     def test_team_str(self):
         """Test team string representation"""
@@ -44,7 +50,7 @@ class TeamModelTests(TestCase):
         )
         TeamMembership.objects.create(team=self.team, user=user2)
         
-        self.assertEqual(self.team.member_count, 1)
+        self.assertEqual(self.team.members.distinct().count(), 2)
 
 
 class TeamMembershipTests(TestCase):
@@ -89,13 +95,18 @@ class TeamAPITests(APITestCase):
             password='Test123!',
             role='PM'
         )
-        self.client.force_authenticate(user=self.user)
         
         self.team = Team.objects.create(
-            name='Test Team',
-            lead=self.user
+            name='Test Team'
         )
-        TeamMembership.objects.create(team=self.team, user=self.user)
+        
+        TeamMembership.objects.create(
+            team=self.team,
+            user=self.user,
+            role=TeamMembership.Role.LEAD
+        )
+        
+        self.client.force_authenticate(user=self.user)
         
         self.team_list_url = reverse('team-list')
         self.team_detail_url = reverse('team-detail', kwargs={'pk': self.team.id})
@@ -111,8 +122,7 @@ class TeamAPITests(APITestCase):
         """Test creating a team"""
         data = {
             'name': 'New Team',
-            'description': 'A new team',
-            'lead_id': self.user.id
+            'description': 'A new team'
         }
         response = self.client.post(self.team_list_url, data)
         
@@ -160,7 +170,14 @@ class TeamInvitationTests(APITestCase):
             email='invitee@example.com',
             password='Test123!'
         )
-        self.team = Team.objects.create(name='Test Team', lead=self.inviter)
+        self.team = Team.objects.create(name='Test Team')
+        
+        # ✅ این ۵ خط را اضافه کن
+        TeamMembership.objects.create(
+            team=self.team,
+            user=self.inviter,
+            role=TeamMembership.Role.LEAD
+        )
         
         self.client.force_authenticate(user=self.inviter)
     
@@ -173,6 +190,8 @@ class TeamInvitationTests(APITestCase):
             'message': 'Join our team!'
         }
         response = self.client.post(url, data)
+        
+        print("RESPONSE DATA:", response.data)
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(TeamInvitation.objects.count(), 1)

@@ -67,7 +67,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     
     
     @action(detail=True, methods=['post'])
-    def add_member(self, request, slug=None):
+    def add_member(self, request, pk=None):
         """➕ Add a member to the team"""
         team = self.get_object()
         
@@ -102,8 +102,11 @@ class TeamViewSet(viewsets.ModelViewSet):
             )
         
         # 💾 Add member
+                
+        from accounts.models import CustomUser
+        user = CustomUser.objects.get(id=user_id)
         membership = team.add_member(
-            user_id=user_id,
+            user=user,
             role=serializer.validated_data['role'],
             added_by=request.user
         )
@@ -167,7 +170,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             )
     
     @action(detail=True, methods=['post'])
-    def invite(self, request, slug=None):
+    def invite(self, request, pk=None):
         """📨 Send invitation to join team"""
         team = self.get_object()
         
@@ -178,8 +181,11 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        serializer = TeamInvitationSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        data = request.data.copy()
+        data['team_id'] = team.id
+        serializer = TeamInvitationSerializer(data=data)
+        serializer.is_valid(raise_exception=True)   
+        
         
         # 📊 Check if team is full
         if team.is_full:

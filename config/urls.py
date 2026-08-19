@@ -8,8 +8,12 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
     SpectacularRedocView
 )
+from config.views import root
 
 urlpatterns = [
+    # Root status endpoint
+    path('', root, name='root'),
+
     # Admin
     path('admin/', admin.site.urls),
     
