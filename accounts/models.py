@@ -64,17 +64,17 @@ class CustomUser(AbstractUser):
     )
     
     phone_number = models.CharField(
-    max_length=15,
-    blank=True,
-    null=True,
-    validators=[
-        RegexValidator(
-            # این Regex با فرمت 09123456789 و +989123456789 مطابقت دارد
-            regex=r'^(\+98|0)9\d{9}$',
-            message="Phone number must be entered in the format: '09123456789' or '+989123456789'."
-        )
-    ]
-)
+        max_length=15,
+        blank=True,
+        null=True,
+        validators=[
+            RegexValidator(
+                # این Regex با فرمت 09123456789 و +989123456789 مطابقت دارد
+                regex=r'^(\+98|0)9\d{9}$',
+                message="Phone number must be entered in the format: '09123456789' or '+989123456789'."
+            )
+        ]
+    )
     
     bio = models.TextField(max_length=500, blank=True)
     
@@ -82,7 +82,7 @@ class CustomUser(AbstractUser):
         upload_to='profile_pictures/',
         blank=True,
         null=True
-    ) 
+        ) 
     job_title = models.CharField(max_length=100, blank=True)
     
     department = models.CharField(max_length=100, blank=True)

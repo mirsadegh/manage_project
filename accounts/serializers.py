@@ -1,5 +1,3 @@
-"""Serializers for user accounts, registration, authentication and passwords."""
-
 from __future__ import annotations
 
 from typing import Any
