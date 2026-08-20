@@ -10,6 +10,7 @@ from accounts.models import CustomUser
 from urllib.parse import parse_qs
 import logging
 import time
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def get_user_from_token(token_string):
         return TokenValidationResult(error="No token provided")
     
     # Check cache first for performance
-    cache_key = f"ws_token_{hash(token_string)}"
+    cache_key = f"ws_token_{hashlib.sha256(token_string.encode()).hexdigest()}"
     cached_user_id = cache.get(cache_key)
     
     if cached_user_id:
