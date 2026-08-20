@@ -76,23 +76,22 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         base_qs = Project.objects.all()
 
+        # Detail actions use the full queryset so object-level permissions
+        # can decide between 401/403/404 (and never raise on AnonymousUser).
+        if self.action != 'list':
+            return base_qs
+
         # Superusers see all projects
         if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
             return base_qs
 
         # Users see projects they own, manage, or are members of.
-        # Only `list` filters here; object-level permissions on detail
-        # actions (retrieve, update, add_member, ...) decide access so
-        # unauthorized users receive 403 rather than a 404.
-        if self.action == 'list':
-            return base_qs.filter(
-                Q(owner=user) |
-                Q(manager=user) |
-                Q(members__user=user) |
-                Q(is_public=True)
-            ).distinct()
-
-        return base_qs
+        return base_qs.filter(
+            Q(owner=user) |
+            Q(manager=user) |
+            Q(members__user=user) |
+            Q(is_public=True)
+        ).distinct()
     
     
     def get_object(self):

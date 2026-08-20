@@ -94,7 +94,15 @@ class TaskViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter tasks based on user permissions for list views only."""
         user = self.request.user
-        
+
+        # Detail actions must use the full queryset so object-level
+        # permissions can decide between 401/403 (never a 500 on AnonymousUser).
+        if self.action not in ['list', 'my_tasks', 'all_tasks']:
+            return Task.objects.all()
+
+        if not getattr(user, 'is_authenticated', False):
+            return Task.objects.none()
+
         if user.is_superuser or user.role == 'ADMIN':
             return Task.objects.all()
         

@@ -56,6 +56,9 @@ class CanManageProject(permissions.BasePermission):
                request.user.role in ['ADMIN', 'PM', 'TL']
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         # Read permissions
         if request.method in permissions.SAFE_METHODS:
             return IsProjectMember().has_object_permission(request, view, obj)
@@ -74,6 +77,9 @@ class CanManageProjectMembers(permissions.BasePermission):
     message = "Only project owner or manager can manage members."
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         project = obj if hasattr(obj, 'owner') else obj.project
         
         return project.owner == request.user or \
@@ -92,6 +98,9 @@ class CanModifyCompletedProject(permissions.BasePermission):
     message = "Cannot modify completed projects. Contact an administrator if changes are needed."
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         project = obj if hasattr(obj, 'status') else obj.project
         
         # Allow read operations
@@ -116,6 +125,9 @@ class CanDeleteProject(permissions.BasePermission):
     """
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         project = obj
         
         # Only DELETE method

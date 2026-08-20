@@ -38,6 +38,9 @@ class CanManageTask(permissions.BasePermission):
         return True  # برای سایر actionها در has_object_permission چک می‌شود
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         """
         برای update/partial_update
         """
@@ -81,6 +84,9 @@ class CanAssignTask(permissions.BasePermission):
     message = "Only project managers or task creator can assign tasks."
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         task = obj
         project = task.project
         
@@ -98,6 +104,9 @@ class CanChangeTaskStatus(permissions.BasePermission):
     """
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         task = obj
         project = task.project
         
@@ -161,6 +170,9 @@ class CanModifyBlockedTask(permissions.BasePermission):
     message = "This task is blocked. Resolve blockers first or contact project manager."
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         task = obj
         
         # Allow read operations
@@ -187,6 +199,9 @@ class CanModifyCompletedTask(permissions.BasePermission):
     message = "Cannot modify completed tasks. Contact project manager to reopen if needed."
     
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         task = obj
         
         # Allow read operations
@@ -210,6 +225,9 @@ class CanDeleteTask(permissions.BasePermission):
     Only task creator, project manager, or admin can delete.
     """ 
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         task = obj
         
         # Only DELETE method
@@ -252,6 +270,9 @@ class CanReassignTask(permissions.BasePermission):
         return True
 
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         task = obj
         
         return (
