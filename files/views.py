@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.contenttypes.models import ContentType
+from django.db import models
 from django.http import FileResponse, Http404
 from django.utils import timezone
 from .models import Attachment

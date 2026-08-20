@@ -8,7 +8,7 @@ from django.db.models import Q, Count, Avg
 from django.utils import timezone
 from .models import (
     Team, TeamMembership, TeamInvitation,
-    TeamProject, TeamMeeting, TeamGoal
+    TeamProject
 )
 from .serializers import (
     TeamSerializer, TeamDetailSerializer, TeamCreateSerializer,
@@ -539,103 +539,3 @@ class TeamInvitationViewSet(viewsets.ReadOnlyModelViewSet):
                 {'error': f'⚠️ {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-
-class TeamMeetingViewSet(viewsets.ModelViewSet):
-    """
-    📅 Team meeting management.
-    
-    Endpoints:
-    - GET /team-meetings/ - List meetings
-    - POST /team-meetings/ - Create meeting
-    - GET /team-meetings/{id}/ - Get meeting detail
-    - PUT/PATCH /team-meetings/{id}/ - Update meeting
-    - DELETE /team-meetings/{id}/ - Delete meeting
-    - POST /team-meetings/{id}/complete/ - Mark as completed
-    """
-    
-    serializer_class = TeamMeetingSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        """Get meetings for user's teams"""
-        return TeamMeeting.objects.filter(
-            Q(team__members=self.request.user) | Q(attendees=self.request.user)
-        ).distinct().select_related('team', 'organizer')
-    
-    @action(detail=True, methods=['post'])
-    def complete(self, request, pk=None):
-        """✅ Mark meeting as completed"""
-        meeting = self.get_object()
-        
-        # 🔐 Check if user is organizer or team leader
-        if not (meeting.organizer == request.user or meeting.team.is_leader(request.user)):
-            return Response(
-                {'error': '❌ Only organizer or team leader can complete meeting'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        meeting.is_completed = True
-        meeting.completed_at = timezone.now()
-        meeting.save()
-        
-        return Response({
-            'message': '✅ Meeting marked as completed',
-            'meeting': TeamMeetingSerializer(meeting).data
-        })
-
-
-class TeamGoalViewSet(viewsets.ModelViewSet):
-    """
-    🎯 Team goal management.
-    
-    Endpoints:
-    - GET /team-goals/ - List goals
-    - POST /team-goals/ - Create goal
-    - GET /team-goals/{id}/ - Get goal detail
-    - PUT/PATCH /team-goals/{id}/ - Update goal
-    - DELETE /team-goals/{id}/ - Delete goal
-    - POST /team-goals/{id}/update_progress/ - Update progress
-    """
-    
-    serializer_class = TeamGoalSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        """Get goals for user's teams"""
-        return TeamGoal.objects.filter(
-            team__members=self.request.user
-        ).select_related('team', 'owner')
-    
-    @action(detail=True, methods=['post'])
-    def update_progress(self, request, pk=None):
-        """📈 Update goal progress"""
-        goal = self.get_object()
-        
-        # 🔐 Check if user is goal owner or team leader
-        if not (goal.owner == request.user or goal.team.is_leader(request.user)):
-            return Response(
-                {'error': '❌ Only goal owner or team leader can update progress'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        progress = request.data.get('progress')
-        current_value = request.data.get('current_value')
-        
-        if progress is not None:
-            goal.progress = progress
-            
-            # ✅ Auto-complete if progress is 100%
-            if progress >= 100 and goal.status != TeamGoal.Status.COMPLETED:
-                goal.status = TeamGoal.Status.COMPLETED
-                goal.completed_date = timezone.now().date()
-        
-        if current_value is not None:
-            goal.current_value = current_value
-        
-        goal.save()
-        
-        return Response({
-            'message': '✅ Progress updated',
-            'goal': TeamGoalSerializer(goal).data
-        })
