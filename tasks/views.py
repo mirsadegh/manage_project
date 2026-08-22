@@ -37,6 +37,11 @@ class TaskListViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['project']
 
+    def get_queryset(self):
+        # Avoid an N+1: each TaskList serializes task_count via obj.tasks.count().
+        # Prefetch the reverse FK so the count reads from the cached result.
+        return TaskList.objects.all().prefetch_related('tasks')
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
