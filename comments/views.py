@@ -29,9 +29,18 @@ class CommentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsCommentAuthorOrReadOnly]
     
     def get_permissions(self):
-        permission_classes = [IsAuthenticated, CanAccessProjectComments]
-        if self.action in ['update', 'partial_update', 'destroy']:
-            permission_classes.append(IsCommentAuthorOrReadOnly)
+        # Edit/delete must be restricted to the comment's author (or an admin),
+        # not just any project member. List/retrieve/create/react only require
+        # project membership via CanAccessProjectComments.
+        if self.action in ('update', 'partial_update', 'destroy'):
+            permission_classes = [
+                IsAuthenticated,
+                CanAccessProjectComments,
+                IsCommentAuthorOrReadOnly,
+            ]
+        else:
+            permission_classes = [IsAuthenticated, CanAccessProjectComments]
+
         return [permission() for permission in permission_classes]
     
     def get_serializer_class(self):
@@ -40,27 +49,59 @@ class CommentViewSet(viewsets.ModelViewSet):
         return CommentSerializer
     
     def get_queryset(self):
-        """Filter comments based on query parameters"""
-        queryset = Comment.objects.select_related('author', 'parent').prefetch_related('replies', 'reactions')
-        
-        # Filter by content type and object
-        content_type = self.request.query_params.get('content_type')
-        object_id = self.request.query_params.get('object_id')
-        
-        if content_type:
-            try:
-                ct = ContentType.objects.get(model=content_type.lower())
-                queryset = queryset.filter(content_type=ct)
-                if object_id:
-                    queryset = queryset.filter(object_id=object_id)
-            except ContentType.DoesNotExist:
-                queryset = queryset.none()
-        
-        # Filter top-level comments only (exclude replies)
-        if self.request.query_params.get('top_level') == 'true':
-            queryset = queryset.filter(parent__isnull=True)
-        
-        return queryset
+           """Filter comments based on query parameters"""
+           queryset = Comment.objects.select_related('author', 'parent').prefetch_related('replies', 'reactions')
+
+           # Filter by content type and object
+           content_type = self.request.query_params.get('content_type')
+           object_id = self.request.query_params.get('object_id')
+
+           if content_type:
+               try:
+                   ct = ContentType.objects.get(model=content_type.lower())
+                   queryset = queryset.filter(content_type=ct)
+                   if object_id:
+                       queryset = queryset.filter(object_id=object_id)
+               except ContentType.DoesNotExist:
+                   queryset = queryset.none()
+           else:
+               # BOLA fix: no object filter => only comments on projects the
+               # requester can access.
+               queryset = self._scope_to_accessible_projects(queryset)
+
+           # Filter top-level comments only (exclude replies)
+           if self.request.query_params.get('top_level') == 'true':
+               queryset = queryset.filter(parent__isnull=True)
+
+           return queryset
+
+    def _scope_to_accessible_projects(self, queryset):
+        """Restrict to comments whose project/task the user can access."""
+        from django.db.models import Q
+        from projects.models import Project
+        from tasks.models import Task
+
+        user = self.request.user
+        if user.is_superuser or getattr(user, 'role', None) in ['ADMIN', 'PM']:
+            return queryset
+
+        project_ids = list(
+            Project.objects.filter(
+                Q(owner=user) | Q(manager=user) |
+                Q(members__user=user, members__is_active=True)
+            ).values_list('id', flat=True)
+        )
+        project_ct = ContentType.objects.get(app_label='projects', model='project')
+        task_ct = ContentType.objects.get(app_label='tasks', model='task')
+        task_ids = list(
+            Task.objects.filter(project_id__in=project_ids).values_list('id', flat=True)
+        )
+        return queryset.filter(
+            Q(content_type=project_ct, object_id__in=project_ids) |
+            Q(content_type=task_ct, object_id__in=task_ids)
+        )
+
+    
     
     def perform_create(self, serializer):
         """Create comment and process mentions"""
@@ -100,6 +141,15 @@ class CommentViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid object_type. Allowed: task, project'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+         # Authorization: must be a member of the related project.
+        perm = CanAccessProjectComments()
+        project = perm._get_project(object_type, object_id)
+        if not perm._is_member(request.user, project):
+            return Response(
+                {'error': 'You do not have access to this content.'},
+                status=status.HTTP_403_FORBIDDEN
+            )    
 
         ct = ContentType.objects.get(model=object_type)
 

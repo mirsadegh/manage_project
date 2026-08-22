@@ -7,6 +7,7 @@ from projects.models import Project, ProjectMember
 class CanAccessProjectComments(permissions.BasePermission):
     """
     Only project members can list/create comments on a project's content.
+    Also enforces object-level access for retrieve/react/etc.
     """
 
     message = "You must be a project member to view or comment on this content."
@@ -29,6 +30,15 @@ class CanAccessProjectComments(permissions.BasePermission):
             return content_object
         return getattr(content_object, 'project', None)
 
+    def _get_project_from_comment(self, comment):
+           """Resolve the project a comment is attached to (task or project)."""
+           content_object = comment.content_object
+           if content_object is None:
+               return None
+           if hasattr(content_object, 'owner') and hasattr(content_object, 'members'):
+               return content_object
+           return getattr(content_object, 'project', None)
+    
     def _is_member(self, user, project):
         if project is None:
             return False
@@ -71,6 +81,12 @@ class CanAccessProjectComments(permissions.BasePermission):
             return self._is_member(request.user, project)
 
         return True
+    
+    def has_object_permission(self, request, view, obj):
+        # obj is a Comment; enforce project membership (covers retrieve,
+        # react/unreact, and is an extra guard for update/destroy).
+        project = self._get_project_from_comment(obj)
+        return self._is_member(request.user, project)
 
 
 class IsCommentAuthorOrReadOnly(permissions.BasePermission):
