@@ -20,6 +20,24 @@ class Team(models.Model):
         through_fields=('team', 'user')
     )
     
+    allow_self_join = models.BooleanField(
+        default=False,
+        help_text="Whether users can join the team without an invitation"
+    )
+    max_members = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum number of members (null = unlimited)"
+    )
+    total_projects = models.PositiveIntegerField(
+        default=0,
+        help_text="Cached count of projects assigned to the team"
+    )
+    completed_projects = models.PositiveIntegerField(
+        default=0,
+        help_text="Cached count of completed projects assigned to the team"
+    )
+    
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Team'
@@ -52,9 +70,37 @@ class Team(models.Model):
             role=TeamMembership.Role.LEAD
         ).exists()   
          
+        # ✅ کد درست:
     @property
     def is_full(self):
-        return False
+        if self.max_members is None:
+            return False
+        return self.memberships.filter(is_active=True).count() >= self.max_members
+
+    def get_performance_stats(self):
+        """Aggregate performance metrics for the team.
+
+        Called by TeamViewSet.performance; previously missing, which raised
+        AttributeError (HTTP 500) on the endpoint.
+        """
+        from django.db.models import Sum
+
+        active_memberships = self.memberships.filter(is_active=True)
+        tasks_completed = active_memberships.aggregate(
+            total=Sum('tasks_completed')
+        )['total'] or 0
+        member_count = active_memberships.count()
+        return {
+            'total_members': member_count,
+            'active_members': member_count,
+            'total_projects': self.team_projects.count(),
+            'total_goals': self.goals.count(),
+            'total_meetings': self.meetings.count(),
+            'tasks_completed': tasks_completed,
+            'avg_tasks_completed': (
+                (tasks_completed / member_count) if member_count else 0
+            ),
+        }
 
 class TeamMembership(models.Model):
     """

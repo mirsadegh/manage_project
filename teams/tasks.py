@@ -59,7 +59,7 @@ def update_team_stats():
     📊 Update team statistics.
     Runs weekly to update performance metrics.
     """
-    teams = Team.objects.filter(is_active=True)
+    teams = Team.objects.all()
     
     for team in teams:
         # Update project counts
