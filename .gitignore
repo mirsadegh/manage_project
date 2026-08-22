@@ -1,42 +1,17 @@
-# Python
-*.py[cod]
-*$py.class
-*.so
+# Coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+
+# Cache directories
+.pytest_cache/
 __pycache__/
-*.egg-info/
-dist/
-build/
 
-# Django
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
-staticfiles/
-
-# Environment variables
+# Environment files
 .env
-.env.local
-*.env
 
-# Virtual environment
-venv/
-env/
-ENV/
-.venv
-
-# IDE
-.vscode/
+# IDE/Editor
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# PostgreSQL
-*.sql
-*.dump
