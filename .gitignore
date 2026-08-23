@@ -1,17 +1,65 @@
-# Coverage artifacts
-.coverage
-coverage.xml
-htmlcov/
+
 
 # Cache directories
 .pytest_cache/
 __pycache__/
-
-# Environment files
-.env
 
 # IDE/Editor
 .idea/
 .vscode/
 *.swp
 *.swo
+# Local development files
+db.sqlite3
+db.sqlite3-journal
+logs/
+media/
+staticfiles/
+
+# Test coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Uploaded files (NEVER commit user uploads)
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI tool artifacts
+.aider*
+.claude/
+.crush/
+.mimocode/
+
+# Environment
+.env
+.env.local
+.env.*.local
