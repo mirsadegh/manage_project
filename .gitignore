@@ -40,3 +40,7 @@ Thumbs.db
 # PostgreSQL
 *.sql
 *.dump
+# Coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
