@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.contenttypes.models import ContentType
 from .models import ActivityLog, ActivityFeed
 from .serializers import ActivityLogSerializer, ActivityFeedSerializer
-
+from django.db.models import Count, Q
 
 class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -62,9 +62,8 @@ class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=False, methods=['get'])
     def recent(self, request):
-        """Get recent activities across the system"""
-        # Limit to activities user has access to
-        activities = ActivityLog.objects.all()[:100]  # Last 100
+        """Get recent activities the requester can access. """
+        activities = self._accessible_activities(request.user).select_related('content_type')[:100]
         
         page = self.paginate_queryset(activities)
         if page is not None:
@@ -73,6 +72,37 @@ class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
         
         serializer = self.get_serializer(activities, many=True)
         return Response(serializer.data)
+    
+    
+    def _accessible_activities(self, user):
+        """Activities authored by the user or on content they can access."""
+        from django.db.models import Q
+        from projects.models import Project
+        from tasks.models import Task
+        from teams.models import Team
+
+        if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
+            return ActivityLog.objects.all()
+
+        project_ids = list(
+            Project.objects.filter(
+                Q(owner=user) | Q(manager=user) |
+                Q(members__user=user, members__is_active=True)
+            ).values_list('id', flat=True)
+        )
+        team_ids = list(Team.objects.filter(members=user).values_list('id', flat=True))
+        project_ct = ContentType.objects.get(app_label='projects', model='project')
+        task_ct = ContentType.objects.get(app_label='tasks', model='task')
+        team_ct = ContentType.objects.get(app_label='teams', model='team')
+        task_ids = list(
+            Task.objects.filter(project_id__in=project_ids).values_list('id', flat=True)
+        )
+        return ActivityLog.objects.filter(
+            Q(user=user) |
+            Q(content_type=project_ct, object_id__in=project_ids) |
+            Q(content_type=task_ct, object_id__in=task_ids) |
+            Q(content_type=team_ct, object_id__in=team_ids)
+        )
 
 
 class ActivityFeedViewSet(viewsets.ReadOnlyModelViewSet):
