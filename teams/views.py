@@ -55,15 +55,18 @@ class TeamViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter teams based on user access"""
         user = self.request.user
-        
         if user.is_superuser or user.role == 'ADMIN':
+            return Team.objects.all()
+        
+        # ✅ Allow 'join' action to access any team
+        # Security check (allow_self_join) is done in the join action itself
+        if self.action == 'join':
             return Team.objects.all()
         
         # Users see teams they're members of
         return Team.objects.filter(
             Q(members=user)
         ).distinct()
-    
     
     
     @action(detail=True, methods=['post'])
@@ -127,7 +130,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         )
     
     @action(detail=True, methods=['delete'], url_path='remove_member/(?P<membership_id>[^/.]+)')
-    def remove_member(self, request, slug=None, membership_id=None):
+    def remove_member(self, request, pk=None, membership_id=None):
         """➖ Remove a member from the team"""
         team = self.get_object()
         
@@ -142,7 +145,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             membership = team.memberships.get(id=membership_id)
             
             # 🚫 Prevent removing the team lead
-            if membership.user == team.lead:
+            if team.is_leader(membership.user):
                 return Response(
                     {'error': '⚠️ Cannot remove team lead'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -215,7 +218,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         )
     
     @action(detail=True, methods=['post'])
-    def join(self, request, slug=None):
+    def join(self, request, pk=None):
         """🤝 Join team (if self-join is allowed)"""
         team = self.get_object()
         
@@ -252,9 +255,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         
         # 📧 Notify team lead
         from notifications.models import Notification
-        if team.lead:
+        if team.memberships.filter(role=TeamMembership.Role.LEAD, is_active=True).exists():
             Notification.objects.create(
-                recipient=team.lead,
+                recipient=team.memberships.filter(role=TeamMembership.Role.LEAD, is_active=True).first().user,
                 notification_type='JOINED',
                 title='👤 New Team Member',
                 message=f'{request.user.get_full_name()} joined team "{team.name}"',
@@ -267,7 +270,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['get'])
-    def projects(self, request, slug=None):
+    def projects(self, request, pk=None):
         """📊 Get team projects"""
         team = self.get_object()
         team_projects = team.team_projects.all()
@@ -280,7 +283,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
-    def assign_project(self, request, slug=None):
+    def assign_project(self, request, pk=None):
         """🎯 Assign project to team"""
         team = self.get_object()
         
@@ -335,7 +338,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             )
     
     @action(detail=True, methods=['get'])
-    def meetings(self, request, slug=None):
+    def meetings(self, request, pk=None):
         """📅 Get team meetings"""
         team = self.get_object()
         
@@ -361,7 +364,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
-    def schedule_meeting(self, request, slug=None):
+    def schedule_meeting(self, request, pk=None):
         """📅 Schedule a team meeting"""
         team = self.get_object()
         
@@ -404,7 +407,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         )
     
     @action(detail=True, methods=['get'])
-    def goals(self, request, slug=None):
+    def goals(self, request, pk=None):
         """🎯 Get team goals"""
         team = self.get_object()
         
@@ -423,7 +426,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
-    def create_goal(self, request, slug=None):
+    def create_goal(self, request, pk=None):
         """🎯 Create a team goal"""
         team = self.get_object()
         
@@ -445,7 +448,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         )
     
     @action(detail=True, methods=['get'])
-    def performance(self, request, slug=None):
+    def performance(self, request, pk=None):
         """📊 Get team performance report"""
         team = self.get_object()
         

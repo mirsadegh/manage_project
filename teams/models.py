@@ -20,6 +20,24 @@ class Team(models.Model):
         through_fields=('team', 'user')
     )
     
+    allow_self_join = models.BooleanField(
+        default=False,
+        help_text="Whether users can join the team without an invitation"
+    )
+    max_members = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum number of members (null = unlimited)"
+    )
+    total_projects = models.PositiveIntegerField(
+        default=0,
+        help_text="Cached count of projects assigned to the team"
+    )
+    completed_projects = models.PositiveIntegerField(
+        default=0,
+        help_text="Cached count of completed projects assigned to the team"
+    )
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Team'
@@ -54,7 +72,9 @@ class Team(models.Model):
          
     @property
     def is_full(self):
-        return False
+        if self.max_members is None:
+            return False
+        return self.memberships.filter(is_active=True).count() >= self.max_members
 
 class TeamMembership(models.Model):
     """
