@@ -20,7 +20,7 @@ class TaskLabelSerializer(serializers.ModelSerializer):
 class TaskListSerializer(serializers.ModelSerializer):
     """Task list serializer"""
     
-    task_count = serializers.SerializerMethodField()
+    task_count = serializers.IntegerField(read_only=True, default=0)
     
     
     class Meta:
@@ -29,8 +29,6 @@ class TaskListSerializer(serializers.ModelSerializer):
                   'order', 'position', 'task_count', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
         
-    def get_task_count(self, obj):
-        return obj.tasks.count()
     
 
 
