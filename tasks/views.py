@@ -32,15 +32,24 @@ from config.decorators import require_task_assignee, require_role
 class TaskListViewSet(viewsets.ModelViewSet):
     """Task list CRUD operations"""
     queryset = TaskList.objects.all()
+
+    def get_queryset(self):
+        # Optimize task_count with SQL COUNT to avoid N+1 queries
+        from django.db.models import Count
+        return super().get_queryset().annotate(
+            task_count=Count('tasks')
+        )
     serializer_class = TaskListSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['project']
 
     def get_queryset(self):
-        # Avoid an N+1: each TaskList serializes task_count via obj.tasks.count().
-        # Prefetch the reverse FK so the count reads from the cached result.
-        return TaskList.objects.all().prefetch_related('tasks')
+        # Optimize task_count with SQL COUNT to avoid N+1 queries
+        from django.db.models import Count
+        return TaskList.objects.all().annotate(
+            task_count=Count('tasks')
+        )
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)

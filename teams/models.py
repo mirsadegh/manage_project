@@ -38,6 +38,28 @@ class Team(models.Model):
         help_text="Cached count of completed projects assigned to the team"
     )
 
+    def get_performance_stats(self):
+        """Return aggregated performance statistics for this team."""
+        from django.db.models import Sum, Count
+        
+        active_memberships = self.memberships.filter(is_active=True)
+        member_count = active_memberships.count()
+        
+        # Aggregate tasks completed
+        tasks_completed = active_memberships.aggregate(
+            total=Sum('tasks_completed')
+        )['total'] or 0
+        
+        return {
+            'total_members': self.memberships.count(),
+            'active_members': member_count,
+            'total_projects': self.team_projects.count(),
+            'total_goals': self.goals.count() if hasattr(self, 'goals') else 0,
+            'total_meetings': self.meetings.count() if hasattr(self, 'meetings') else 0,
+            'tasks_completed': tasks_completed,
+            'avg_tasks_completed': (tasks_completed / member_count) if member_count else 0,
+        }
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Team'
