@@ -113,12 +113,8 @@ class Attachment(models.Model):
         validators=[
             validate_file_size,
             FileExtensionValidator(
-                allowed_extensions=[
-                    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-                    'txt', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp',
-                    'zip', 'rar', '7z', 'gz', 'css',
-                    'json'
-                ]
+                # M2/M3: source of truth is settings.ALLOWED_FILE_EXTENSIONS.
+                allowed_extensions=settings.ALLOWED_FILE_EXTENSIONS
             )
         ],
         help_text="The uploaded file"

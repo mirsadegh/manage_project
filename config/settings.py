@@ -492,12 +492,12 @@ MEDIA_ROOT = BASE_DIR / 'media'
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
-# Allowed file extensions (additional security layer)
+# Allowed file extensions (single source of truth for M2/M3).
+# Post-C3: dangerous types (svg, html, js, xml) are excluded.
 ALLOWED_FILE_EXTENSIONS = [
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
     'txt', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp',
-    'svg', 'zip', 'rar', '7z', 'gz', 'html', 'css',
-    'js', 'json', 'xml'
+    'zip', 'rar', '7z', 'gz', 'css', 'json',
 ]
 
 # Max file size (10 MB)
