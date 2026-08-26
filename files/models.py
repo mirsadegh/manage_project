@@ -68,7 +68,6 @@ def validate_file_type(file):
         'image/png',
         'image/gif',
         'image/webp',
-        'image/svg+xml',
         
         # Archives
         'application/zip',
@@ -77,11 +76,8 @@ def validate_file_type(file):
         'application/gzip',
         
         # Code
-        'text/html',
         'text/css',
-        'application/javascript',
         'application/json',
-        'application/xml',
     ]
     
     # Read file content to detect MIME type
@@ -120,8 +116,8 @@ class Attachment(models.Model):
                 allowed_extensions=[
                     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
                     'txt', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp',
-                    'svg', 'zip', 'rar', '7z', 'gz', 'html', 'css',
-                    'js', 'json', 'xml'
+                    'zip', 'rar', '7z', 'gz', 'css',
+                    'json'
                 ]
             )
         ],
@@ -176,8 +172,8 @@ class Attachment(models.Model):
         help_text="Whether file has been scanned for viruses"
     )
     is_safe = models.BooleanField(
-        default=True,
-        help_text="Whether file passed security scan"
+        default=False,
+        help_text="Whether file passed security scan (defaults unsafe until scanned)"
     )
     
     # Download tracking

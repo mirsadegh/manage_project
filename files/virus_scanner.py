@@ -14,9 +14,9 @@ class VirusScanner:
     """
     Virus scanner using ClamAV.
     Install ClamAV: sudo apt-get install clamav clamav-daemon
-    The clamd dependency is optional; when it is not installed virus
-    scanning is skipped (the file is treated as safe) instead of crashing
-    the whole files application at import time.
+    The clamd dependency is optional at import time so importing this
+    module does not crash when clamd is missing; scanning FAILS CLOSED —
+    when clamd is not installed the file is rejected, not treated as safe.
     """
 
     @staticmethod
@@ -26,8 +26,8 @@ class VirusScanner:
         Returns (is_safe, message)
         """
         if clamd is None:
-            logger.warning("ClamAV (clamd) not installed - skipping virus scan")
-            return True, "Virus scanner unavailable - scan skipped"
+            logger.error("ClamAV (clamd) not installed - failing closed")
+            return False, "Virus scanner unavailable - file rejected"
 
         try:
             cd = clamd.ClamdUnixSocket()

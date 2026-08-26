@@ -100,10 +100,10 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         """
         attachment = self.get_object()
         
-        # Check if file is safe
-        if not attachment.is_safe:
+        # Block if not yet scanned OR flagged unsafe (fail-closed TOCTOU fix)
+        if not attachment.is_scanned or not attachment.is_safe:
             return Response(
-                {'error': 'This file has been flagged as unsafe and cannot be downloaded'},
+                {'error': 'This file has not passed security scanning and cannot be downloaded'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
