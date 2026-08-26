@@ -88,9 +88,17 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             request=self.request
         )
         
-        # Trigger async virus scan
+        # Trigger async virus scan. H1: surface broker failures as a warning
+        # so a downed Celery doesn't silently strand the file as never-scanned.
         from .tasks import scan_uploaded_file
-        scan_uploaded_file.delay(attachment.id)
+        try:
+            scan_uploaded_file.delay(attachment.id)
+        except Exception as exc:
+            import logging
+            logging.getLogger('files').warning(
+                'Virus scan task could not be enqueued for attachment %s: %s',
+                attachment.id, exc,
+            )
     
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
@@ -124,14 +132,37 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             request=request
         )
         
+        # H3: defense-in-depth MIME override. Legacy attachments may still
+        # carry dangerous MIMEs (SVG/HTML/JS/XML) from before C3. Force them
+        # to application/octet-stream so browsers cannot render them.
+        DANGEROUS_DOWNLOAD_MIMES = frozenset({
+            'image/svg+xml',
+            'text/html',
+            'application/javascript',
+            'text/javascript',
+            'application/xml',
+            'text/xml',
+        })
+        served_mime = (
+            'application/octet-stream'
+            if attachment.file_type in DANGEROUS_DOWNLOAD_MIMES
+            else attachment.file_type
+        )
+
         # Serve file
         response = FileResponse(
             attachment.file.open('rb'),
-            content_type=attachment.file_type
+            content_type=served_mime
         )
-        
+
         # Set content disposition to trigger download
         response['Content-Disposition'] = f'attachment; filename="{attachment.original_filename}"'
+
+        # H4: defense-in-depth security headers.
+        response['Content-Security-Policy'] = "default-src 'none'; img-src 'self'"
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        response['Referrer-Policy'] = 'no-referrer'
         
         return response
     
@@ -167,9 +198,14 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             attachment.file.open('rb'),
             content_type=attachment.file_type
         )
-        
         # Set content disposition for inline display
         response['Content-Disposition'] = f'inline; filename="{attachment.original_filename}"'
+
+        # H4: defense-in-depth security headers.
+        response['Content-Security-Policy'] = "default-src 'none'; img-src 'self'"
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        response['Referrer-Policy'] = 'no-referrer'
         
         return response
     
