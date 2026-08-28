@@ -198,26 +198,36 @@ class JWTAuthMiddleware(BaseMiddleware):
         return await super().__call__(scope, receive, send)
     
     def _extract_token(self, scope):
-        """Extract JWT token from query string or headers."""
+        """Extract JWT token from query string or headers.
+
+        PR-3 Fix #4: query-string token extraction is DEPRECATED. It is
+        kept for backward compatibility (browser WebSocket clients that
+        cannot set custom headers), but emits a warning on every
+        connection. Clients should prefer the Authorization header or
+        the Sec-WebSocket-Protocol subprotocol.
+        """
         token = None
-        
-        # Method 1: Query string parameter
+        source = None  # which method yielded the token
+
+        # Method 1: Query string parameter (DEPRECATED)
         query_string = scope.get('query_string', b'').decode()
         if query_string:
             params = parse_qs(query_string)
             token_list = params.get('token', [])
             if token_list:
                 token = token_list[0]
-        
+                source = 'query_string'
+
         # Method 2: Authorization header
         if not token:
             headers = dict(scope.get('headers', []))
             auth_header = headers.get(b'authorization', b'').decode()
             if auth_header.startswith('Bearer '):
                 token = auth_header[7:]
+                source = 'authorization_header'
             elif auth_header.startswith('bearer '):
                 token = auth_header[7:]
-        
+                source = 'authorization_header'
         # Method 3: Sec-WebSocket-Protocol header (for browsers that can't set custom headers)
         if not token:
             headers = dict(scope.get('headers', []))
@@ -227,8 +237,20 @@ class JWTAuthMiddleware(BaseMiddleware):
                 for protocol in protocols:
                     if protocol.startswith('access_token.'):
                         token = protocol.replace('access_token.', '')
+                        source = 'sec_websocket_protocol'
                         break
-        
+
+        # PR-3 Fix #4: deprecation warning when token comes from query string.
+        if source == 'query_string':
+            logger.warning(
+                'WebSocket auth via query-string ?token= is DEPRECATED. '
+                'Use Authorization: Bearer <token> header instead.'
+            )
+
+        # Stash the source for downstream observability.
+        if token:
+            scope.setdefault('auth_meta', {})['token_source'] = source
+
         return token
     
     def _get_client_ip(self, scope):

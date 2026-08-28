@@ -6,6 +6,7 @@ from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.utils import timezone
+from config.websocket_throttle import expensive
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -119,8 +120,12 @@ class NotificationConsumer(BaseConsumer):
             self.channel_name
         )
 
+        # PR-3 Fix #6: per-connection inbound rate limit.
+        from config.websocket_throttle import _TokenBucket, DEFAULT_LIMIT_PER_SECOND, EXPENSIVE_LIMIT_PER_SECOND
+        self._ws_default_bucket = _TokenBucket(DEFAULT_LIMIT_PER_SECOND)
+        self._ws_expensive_bucket = _TokenBucket(EXPENSIVE_LIMIT_PER_SECOND)
+
         # Track connection
-        await self._track_connection(connected=True)
 
         # Accept connection
         await self.accept()
@@ -180,11 +185,13 @@ class NotificationConsumer(BaseConsumer):
         except json.JSONDecodeError:
             await self.send_error('Invalid JSON format', code='INVALID_JSON')
             return
-        
+
         message_type = data.get('type', '')
-        
-        # Map message types to handlers
-        handlers = {
+
+        # PR-3 Fix #6: rate-limit inbound messages.
+        from config.websocket_throttle import ThrottledConsumer, expensive
+        # Determine bucket: expensive handler vs default.
+        handler_for_type = {
             'ping': self._handle_ping,
             'mark_read': self._handle_mark_read,
             'mark_all_read': self._handle_mark_all_read,
@@ -194,8 +201,22 @@ class NotificationConsumer(BaseConsumer):
             'unsubscribe_categories': self._handle_unsubscribe_categories,
             'delete_notification': self._handle_delete_notification,
         }
-        
-        handler = handlers.get(message_type)
+        handler = handler_for_type.get(message_type)
+        bucket = (
+            self._ws_expensive_bucket
+            if handler is not None and getattr(handler, '_ws_expensive', False)
+            else self._ws_default_bucket
+        )
+        if not bucket.try_consume():
+            logger.warning(
+                'NotificationConsumer rate limit exceeded for user %s (type=%s)',
+                getattr(self, 'user', None) and self.user.id, message_type,
+            )
+            await self.close(code=4290)
+            return
+
+        # Map message types to handlers
+        handlers = handler_for_type
         if handler:
             try:
                 await handler(data)
@@ -257,6 +278,7 @@ class NotificationConsumer(BaseConsumer):
             'category': category,
         })
     
+    @expensive
     async def _handle_get_recent(self, data):
         """Get recent notifications."""
         limit = min(data.get('limit', 10), 50)  # Cap at 50

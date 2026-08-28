@@ -1,17 +1,17 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
-from notifications.consumers import BaseConsumer
-import json
-import logging
-from datetime import datetime
-from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.utils import timezone
+from config.websocket_throttle import expensive
+from notifications.consumers import BaseConsumer
+
+import json
+import logging
+from datetime import datetime
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-
 
 
 class ProjectConsumer(BaseConsumer):
@@ -93,6 +93,10 @@ class ProjectConsumer(BaseConsumer):
             self.channel_name
         )
 
+        # PR-3 Fix #6: per-connection inbound rate limit.
+        from config.websocket_throttle import _TokenBucket, DEFAULT_LIMIT_PER_SECOND, EXPENSIVE_LIMIT_PER_SECOND
+        self._ws_default_bucket = _TokenBucket(DEFAULT_LIMIT_PER_SECOND)
+        self._ws_expensive_bucket = _TokenBucket(EXPENSIVE_LIMIT_PER_SECOND)
         # Track online user
         await self._add_online_user()
 
@@ -181,10 +185,11 @@ class ProjectConsumer(BaseConsumer):
         except json.JSONDecodeError:
             await self.send_error('Invalid JSON format', code='INVALID_JSON')
             return
-        
+
         message_type = data.get('type', '')
-        
-        handlers = {
+
+        # PR-3 Fix #6: rate-limit inbound messages.
+        handler_for_type = {
             'ping': self._handle_ping,
             'typing_start': self._handle_typing_start,
             'typing_stop': self._handle_typing_stop,
@@ -194,8 +199,21 @@ class ProjectConsumer(BaseConsumer):
             'focus_task': self._handle_focus_task,
             'unfocus_task': self._handle_unfocus_task,
         }
-        
-        handler = handlers.get(message_type)
+        handler = handler_for_type.get(message_type)
+        bucket = (
+            self._ws_expensive_bucket
+            if handler is not None and getattr(handler, '_ws_expensive', False)
+            else self._ws_default_bucket
+        )
+        if not bucket.try_consume():
+            logger.warning(
+                'ProjectConsumer rate limit exceeded for user %s (type=%s)',
+                getattr(self, 'user', None) and self.user.id, message_type,
+            )
+            await self.close(code=4290)
+            return
+
+        handlers = handler_for_type
         if handler:
             try:
                 await handler(data)
@@ -242,20 +260,36 @@ class ProjectConsumer(BaseConsumer):
             }
         )
     
+    # PR-3 Fix #8: cap the position payload so a single client cannot
+    # use cursor_position as a broadcast amplifier.
+    CURSOR_POSITION_MAX_BYTES = 4096
+
     async def _handle_cursor_position(self, data):
         """Broadcast cursor position for collaborative editing."""
         position = data.get('position')
-        if position:
-            await self.channel_layer.group_send(
-                self.group_name,
-                {
-                    'type': 'cursor_update',
-                    'user_id': self.user.id,
-                    'username': self.user.username,
-                    'position': position,
-                    'element_id': data.get('element_id'),
-                }
+        if not position:
+            return
+        try:
+            encoded = json.dumps(position).encode('utf-8')
+        except (TypeError, ValueError):
+            return
+        if len(encoded) > self.CURSOR_POSITION_MAX_BYTES:
+            logger.warning(
+                'Dropping oversized cursor_position from user %s '
+                '(%d bytes > %d limit)',
+                self.user.username, len(encoded), self.CURSOR_POSITION_MAX_BYTES,
             )
+            return
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                'type': 'cursor_update',
+                'user_id': self.user.id,
+                'username': self.user.username,
+                'position': position,
+                'element_id': data.get('element_id'),
+            }
+        )
     
     async def _handle_get_online_users(self, data):
         """Get list of online users in this project."""
@@ -265,15 +299,29 @@ class ProjectConsumer(BaseConsumer):
             'users': online_users,
         })
     
+    @expensive
     async def _handle_request_sync(self, data):
-        """Request full project state sync."""
+        """Request full project state sync.
+
+        PR-3 Fix #7: re-verify the user is still a project member before
+        serving the data. A revoked member who never disconnected could
+        otherwise pull the full project state.
+        """
+        from projects.models import ProjectMember
+        still_member = await self._still_project_member()
+        if not still_member:
+            logger.warning(
+                'Closing WS for user %s: project %s membership revoked',
+                self.user.username, self.project_slug,
+            )
+            await self.close(code=4003)
+            return
         project_data = await self._get_full_project_data()
         await self.send_json({
             'type': 'sync_response',
             'project': project_data,
             'timestamp': timezone.now().isoformat(),
         })
-    
     async def _handle_focus_task(self, data):
         """Notify others that user is viewing/editing a task."""
         task_id = data.get('task_id')
@@ -556,4 +604,24 @@ class ProjectConsumer(BaseConsumer):
         current = cache.get(cache_key, 0)
         cache.set(cache_key, max(0, current - 1), 3600)
 
+    @database_sync_to_async
+    def _still_project_member(self):
+        """PR-3 Fix #7: re-check that the user still belongs to the project.
+
+        Owners and admins keep access. Public projects are also fine.
+        """
+        from projects.models import Project, ProjectMember
+        try:
+            project = Project.objects.get(slug=self.project_slug)
+        except Project.DoesNotExist:
+            return False
+        if project.owner == self.user:
+            return True
+        if getattr(self.user, 'role', None) in ('admin', 'manager'):
+            return True
+        if getattr(project, 'is_public', False):
+            return True
+        return ProjectMember.objects.filter(
+            project=project, user=self.user,
+        ).exists()
 
