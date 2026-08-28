@@ -408,13 +408,28 @@ class NotificationConsumer(BaseConsumer):
     async def notification_message(self, event):
         """Handle new notification event from channel layer."""
         notification = event.get('notification', {})
-        
+
+        # PR-3 Fix #16: defensive recipient check. If a producer
+        # dispatches to the wrong user's group, the consumer must
+        # drop the message instead of leaking it.
+        recipient_id = (
+            notification.get('recipient_id')
+            if notification.get('recipient_id') is not None
+            else notification.get('recipient')
+        )
+        if recipient_id is not None and int(recipient_id) != self.user.id:
+            logger.warning(
+                'Notification %s targeted user %s but delivered to user %s — dropping',
+                notification.get('id'), recipient_id, self.user.id,
+            )
+            return
+
         # Check category filter if subscriptions are active
         if self.subscribed_categories:
             category = notification.get('category') or notification.get('notification_type')
             if category and category not in self.subscribed_categories:
                 return
-        
+
         await self.send_json({
             'type': 'notification',
             'notification': notification,

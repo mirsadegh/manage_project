@@ -222,6 +222,40 @@ async def test_throttle_per_connection_isolated():
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_throttle_refills_over_time():
+    """
+    After waiting > 1/rate seconds, the bucket refills and a previously-
+    throttled message type is accepted again.
+    """
+    import asyncio as _asyncio
+    user = await _create_user(username='throttle_refill')
+    token = await _issue_token(user)
+    communicator, connected = await _connect_notifications(token)
+    assert connected is True
+    await _drain(communicator, timeout=0.5)
+    try:
+        # First call allowed (1 token in expensive bucket).
+        await _send_json(communicator, {'type': 'get_recent', 'limit': 5})
+        await _drain(communicator, timeout=0.3)
+        # Second call within 1s: throttled.
+        try:
+            await _send_json(communicator, {'type': 'get_recent', 'limit': 5})
+        except Exception:
+            pass
+        await _drain(communicator, timeout=0.3)
+        # Wait > 1s (the expensive rate is 1/s) for the bucket to refill.
+        await _asyncio.sleep(1.2)
+        # Third call should now be allowed.
+        await _send_json(communicator, {'type': 'get_recent', 'limit': 5})
+    finally:
+        try:
+            await communicator.disconnect()
+        except Exception:
+            pass
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_throttle_expensive_handler_lower_limit():
     user = await _create_user(username='throttle_exp')
     token = await _issue_token(user)

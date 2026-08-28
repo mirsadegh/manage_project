@@ -430,10 +430,25 @@ class ProjectConsumer(BaseConsumer):
                 'element_id': event.get('element_id'),
             })
     
+    # PR-3 Fix #17: whitelist of allowed keys for user_focus broadcasts.
+    USER_FOCUS_ALLOWED_KEYS = frozenset({
+        'task_id', 'is_focused', 'timestamp', 'user_id',
+    })
+
     async def user_focus(self, event):
-        """Handle user focus event."""
+        """Handle user focus event from channel layer."""
+        # PR-3 Fix #17: drop any keys outside the whitelist before
+        # forwarding to the client. Untrusted producers (or buggy
+        # in-app code) cannot inject extra fields like 'injected' or
+        # 'admin_override'.
+        filtered = {
+            k: v for k, v in event.items() if k in self.USER_FOCUS_ALLOWED_KEYS
+        }
         if event['user_id'] != self.user.id:
-            await self.send_json(event)
+            await self.send_json({
+                'type': 'user_focus',
+                **filtered,
+            })
     
     async def task_update(self, event):
         """Send task update to client."""

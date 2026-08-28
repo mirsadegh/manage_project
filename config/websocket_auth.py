@@ -301,27 +301,3 @@ class JWTAuthMiddlewareStack:
     def __call__(self, scope):
         return self.inner(scope)
 
-
-# Optional: Decorator for consumers that require authentication
-def websocket_auth_required(consumer_class):
-    """
-    Decorator to enforce authentication on WebSocket consumers.
-    
-    Usage:
-        @websocket_auth_required
-        class MyConsumer(AsyncWebsocketConsumer):
-            pass
-    """
-    original_connect = consumer_class.connect
-    
-    async def connect(self):
-        if not self.scope.get('user') or not self.scope['user'].is_authenticated:
-            await self.close(code=4001)
-            return
-        return await original_connect(self)
-    
-    consumer_class.connect = connect
-    return consumer_class
-
-
-
