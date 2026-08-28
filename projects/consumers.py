@@ -97,6 +97,9 @@ class ProjectConsumer(BaseConsumer):
         from config.websocket_throttle import _TokenBucket, DEFAULT_LIMIT_PER_SECOND, EXPENSIVE_LIMIT_PER_SECOND
         self._ws_default_bucket = _TokenBucket(DEFAULT_LIMIT_PER_SECOND)
         self._ws_expensive_bucket = _TokenBucket(EXPENSIVE_LIMIT_PER_SECOND)
+        # PR-3 Fix #10: start the idle-timeout watchdog.
+        self._ws_start_idle_watchdog()
+
         # Track online user
         await self._add_online_user()
 
@@ -167,6 +170,10 @@ class ProjectConsumer(BaseConsumer):
             await self._remove_online_user()
             # PR-3 Fix #3: decrement per-user cap counter.
             await self._release_user_connection_cap()
+        # PR-3 Fix #10: stop the idle-timeout watchdog.
+        self._ws_cancel_idle_watchdog()
+
+        if hasattr(self, 'user') and self.user and self.user.is_authenticated:
             duration = (timezone.now() - self.connected_at).seconds if self.connected_at else 0
             logger.info(
                 f"User {self.user.username} left project {self.project_slug} "
@@ -180,6 +187,21 @@ class ProjectConsumer(BaseConsumer):
         await self.close(code=4001)
     async def receive(self, text_data):
         """Handle incoming messages from client."""
+        # PR-3 Fix #10: any inbound message resets the idle-timeout clock.
+        self._ws_touch_activity()
+        # PR-3 Fix #12: enforce MAX_MESSAGE_SIZE at the consumer layer
+        # before parsing. daphne already caps at 1 MiB; this is a tighter
+        # cap to bound JSON parse cost and downstream broadcast size.
+        from django.conf import settings as _dj_settings
+        max_size = getattr(_dj_settings, 'MAX_MESSAGE_SIZE', 65536)
+        if text_data and len(text_data.encode('utf-8')) > max_size:
+            logger.warning(
+                'Dropping oversize WS message (%d bytes > %d) from user %s',
+                len(text_data), max_size,
+                getattr(self, 'user', None) and self.user.id,
+            )
+            await self.close(code=4009)
+            return
         try:
             data = json.loads(text_data)
         except json.JSONDecodeError:
@@ -316,10 +338,25 @@ class ProjectConsumer(BaseConsumer):
             )
             await self.close(code=4003)
             return
-        project_data = await self._get_full_project_data()
+        # PR-3 Fix #11: optional `limit` (default 25, max 100) and `cursor`
+        # (task id) for paging. Without a cursor we cap at 25 to bound
+        # the per-call DB cost. Pass `limit=100` only with `cursor`.
+        limit = int(data.get('limit', 25))
+        cursor = data.get('cursor')
+        if cursor is not None and not isinstance(cursor, int):
+            try:
+                cursor = int(cursor)
+            except (TypeError, ValueError):
+                cursor = None
+        # Cap: no cursor → max 25; with cursor → up to 100.
+        max_limit = 100 if cursor is not None else 25
+        limit = max(1, min(limit, max_limit))
+        project_data = await self._get_full_project_data(limit=limit, cursor=cursor)
         await self.send_json({
             'type': 'sync_response',
             'project': project_data,
+            'limit': limit,
+            'cursor': cursor,
             'timestamp': timezone.now().isoformat(),
         })
     async def _handle_focus_task(self, data):
@@ -337,7 +374,7 @@ class ProjectConsumer(BaseConsumer):
                     'action': 'focus',
                 }
             )
-    
+
     async def _handle_unfocus_task(self, data):
         """Notify others that user stopped viewing/editing a task."""
         task_id = data.get('task_id')
@@ -509,28 +546,35 @@ class ProjectConsumer(BaseConsumer):
             return {}
     
     @database_sync_to_async
-    def _get_full_project_data(self):
-        """Get full project data for sync."""
+    def _get_full_project_data(self, limit=25, cursor=None):
+        """Get full project data for sync.
+
+        PR-3 Fix #11: limit defaults to 25 (was 100). With a `cursor`
+        (task id), paging forward returns up to `limit` tasks after it.
+        """
         from projects.models import Project
-        
+
         try:
             project = Project.objects.prefetch_related('tasks', 'members').get(
                 slug=self.project_slug
             )
-            
-            tasks = []
-            if hasattr(project, 'tasks'):
-                tasks = [
-                    {
-                        'id': t.id,
-                        'title': t.title,
-                        'status': t.status,
-                        'priority': getattr(t, 'priority', None),
-                        'assignee_id': getattr(t, 'assignee_id', None),
-                    }
-                    for t in project.tasks.all()[:100]  # Limit for performance
-                ]
-            
+
+            tasks_qs = project.tasks.all()
+            if cursor is not None:
+                tasks_qs = tasks_qs.filter(id__gt=cursor)
+            tasks_qs = tasks_qs.order_by('id')[:limit]
+
+            tasks = [
+                {
+                    'id': t.id,
+                    'title': t.title,
+                    'status': t.status,
+                    'priority': getattr(t, 'priority', None),
+                    'assignee_id': getattr(t, 'assignee_id', None),
+                }
+                for t in tasks_qs
+            ]
+
             return {
                 'id': project.id,
                 'name': project.name,

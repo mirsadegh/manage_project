@@ -11,20 +11,19 @@ from config.websocket_throttle import expensive
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-
 class BaseConsumer(AsyncWebsocketConsumer):
     """
     Base consumer with common functionality for all WebSocket consumers.
     """
-    
+
     # Configuration
     HEARTBEAT_INTERVAL = 30  # seconds
     CONNECTION_TIMEOUT = 300  # 5 minutes without activity
-    
+
     async def send_json(self, data):
         """Helper method to send JSON data."""
         await self.send(text_data=json.dumps(data, default=str))
-    
+
     async def send_error(self, message, code=None):
         """Send error message to client."""
         error_data = {
@@ -35,7 +34,7 @@ class BaseConsumer(AsyncWebsocketConsumer):
         if code:
             error_data['code'] = code
         await self.send_json(error_data)
-    
+
     async def send_success(self, message, data=None):
         """Send success message to client."""
         response = {
@@ -46,7 +45,7 @@ class BaseConsumer(AsyncWebsocketConsumer):
         if data:
             response['data'] = data
         await self.send_json(response)
-    
+
     def get_client_ip(self):
         """Extract client IP from scope, using trusted-proxy resolver
         (PR-3 Fix #2) so X-Forwarded-For is only honored behind known proxies.
@@ -54,13 +53,53 @@ class BaseConsumer(AsyncWebsocketConsumer):
         from config.proxies import get_client_ip
         return get_client_ip(self.scope)
 
+    # --- PR-3 Fix #10: idle-timeout helpers ---
+    async def _ws_idle_watchdog(self):
+        """Background task: close the connection after CONNECTION_TIMEOUT
+        of no inbound activity. Touched (re-armed) on every received message.
+        """
+        import asyncio
+        try:
+            while True:
+                await asyncio.sleep(self.CONNECTION_TIMEOUT)
+                logger.info(
+                    'Closing idle WS for user %s after %ds of inactivity',
+                    getattr(self, 'user', None) and self.user.id,
+                    self.CONNECTION_TIMEOUT,
+                )
+                await self.close(code=4000)
+                return
+        except asyncio.CancelledError:
+            return
+
+    def _ws_start_idle_watchdog(self):
+        """Spawn the idle-timeout task. Call from connect()."""
+        import asyncio
+        self._ws_idle_task = asyncio.create_task(self._ws_idle_watchdog())
+
+    def _ws_cancel_idle_watchdog(self):
+        """Cancel the idle-timeout task. Call from disconnect()."""
+        task = getattr(self, '_ws_idle_task', None)
+        if task and not task.done():
+            task.cancel()
+        self._ws_idle_task = None
+
+    def _ws_touch_activity(self):
+        """Reset the idle timer. Call at the top of every receive() handler.
+
+        Implementation: cancel the existing watchdog and spawn a new one
+        with a fresh sleep. Simpler than carrying a wake-up event.
+        """
+        self._ws_cancel_idle_watchdog()
+        self._ws_start_idle_watchdog()
+
 
 class NotificationConsumer(BaseConsumer):
     """
     WebSocket consumer for real-time user notifications.
-    
+
     URL: ws://localhost:8000/ws/notifications/?token=<jwt_token>
-    
+
     Client can send:
         - {"type": "ping"} - Heartbeat
         - {"type": "mark_read", "notification_id": 123}
@@ -68,7 +107,7 @@ class NotificationConsumer(BaseConsumer):
         - {"type": "get_unread_count"}
         - {"type": "get_recent", "limit": 10}
         - {"type": "subscribe_categories", "categories": ["task", "project"]}
-    
+
     Server sends:
         - {"type": "connection_established", ...}
         - {"type": "notification", "notification": {...}}
@@ -125,7 +164,11 @@ class NotificationConsumer(BaseConsumer):
         self._ws_default_bucket = _TokenBucket(DEFAULT_LIMIT_PER_SECOND)
         self._ws_expensive_bucket = _TokenBucket(EXPENSIVE_LIMIT_PER_SECOND)
 
+        # PR-3 Fix #10: start the idle-timeout watchdog.
+        self._ws_start_idle_watchdog()
+
         # Track connection
+        await self._track_connection(connected=True)
 
         # Accept connection
         await self.accept()
@@ -166,6 +209,13 @@ class NotificationConsumer(BaseConsumer):
             await self._track_connection(connected=False)
             # PR-3 Fix #3: decrement per-user cap counter.
             await self._release_user_connection_cap()
+        # PR-3 Fix #10: stop the idle-timeout watchdog.
+        self._ws_cancel_idle_watchdog()
+
+        if hasattr(self, 'user') and self.user and self.user.is_authenticated:
+            await self._track_connection(connected=False)
+            # PR-3 Fix #3: decrement per-user cap counter.
+            await self._release_user_connection_cap()
             duration = (timezone.now() - self.connected_at).seconds if self.connected_at else 0
             logger.info(
                 f"User {self.user.username} disconnected from notifications "
@@ -180,6 +230,21 @@ class NotificationConsumer(BaseConsumer):
     
     async def receive(self, text_data):
         """Handle messages received from WebSocket client."""
+        # PR-3 Fix #10: any inbound message resets the idle-timeout clock.
+        self._ws_touch_activity()
+        # PR-3 Fix #12: enforce MAX_MESSAGE_SIZE at the consumer layer
+        # before parsing. daphne already caps at 1 MiB; this is a tighter
+        # cap to bound JSON parse cost and downstream broadcast size.
+        from django.conf import settings as _dj_settings
+        max_size = getattr(_dj_settings, 'MAX_MESSAGE_SIZE', 65536)
+        if text_data and len(text_data.encode('utf-8')) > max_size:
+            logger.warning(
+                'Dropping oversize WS message (%d bytes > %d) from user %s',
+                len(text_data), max_size,
+                getattr(self, 'user', None) and self.user.id,
+            )
+            await self.close(code=4009)
+            return
         try:
             data = json.loads(text_data)
         except json.JSONDecodeError:

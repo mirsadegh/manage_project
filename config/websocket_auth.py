@@ -180,11 +180,18 @@ class JWTAuthMiddleware(BaseMiddleware):
             scope['auth_error'] = validation_result.error
             
             if not self.ALLOW_ANONYMOUS:
-                logger.warning(f"WebSocket connection denied: {validation_result.error}")
+                # PR-3 Fix #13: collapse all auth-failure reasons into a
+                # single generic string sent to the client. Detailed
+                # reasons (expired/revoked/inactive/invalid) leak token
+                # state to attackers and are logged server-side only.
+                logger.warning(
+                    f"WebSocket connection denied for {client_ip}: "
+                    f"{validation_result.error}"
+                )
                 await self._close_connection(
-                    send, 
-                    code=4001, 
-                    reason=validation_result.error or "Authentication required"
+                    send,
+                    code=4001,
+                    reason="Authentication failed",
                 )
                 return
         
@@ -203,8 +210,12 @@ class JWTAuthMiddleware(BaseMiddleware):
         PR-3 Fix #4: query-string token extraction is DEPRECATED. It is
         kept for backward compatibility (browser WebSocket clients that
         cannot set custom headers), but emits a warning on every
-        connection. Clients should prefer the Authorization header or
-        the Sec-WebSocket-Protocol subprotocol.
+        connection. Clients should prefer the Authorization header.
+
+        PR-3 Fix #14: the Sec-WebSocket-Protocol JWT method was REMOVED.
+        Browsers echo the chosen subprotocol back to JS, which leaks
+        the JWT. Clients must use the Authorization header (or the
+        deprecated query string).
         """
         token = None
         source = None  # which method yielded the token
@@ -228,26 +239,17 @@ class JWTAuthMiddleware(BaseMiddleware):
             elif auth_header.startswith('bearer '):
                 token = auth_header[7:]
                 source = 'authorization_header'
-        # Method 3: Sec-WebSocket-Protocol header (for browsers that can't set custom headers)
-        if not token:
-            headers = dict(scope.get('headers', []))
-            protocol_header = headers.get(b'sec-websocket-protocol', b'').decode()
-            if protocol_header:
-                protocols = [p.strip() for p in protocol_header.split(',')]
-                for protocol in protocols:
-                    if protocol.startswith('access_token.'):
-                        token = protocol.replace('access_token.', '')
-                        source = 'sec_websocket_protocol'
-                        break
 
-        # PR-3 Fix #4: deprecation warning when token comes from query string.
+        # Method 3 (removed in PR-3 Fix #14): no longer extract JWT from
+        # Sec-WebSocket-Protocol — the browser echoes the chosen
+        # subprotocol back to JS, which leaks the token.
+
         if source == 'query_string':
             logger.warning(
                 'WebSocket auth via query-string ?token= is DEPRECATED. '
                 'Use Authorization: Bearer <token> header instead.'
             )
 
-        # Stash the source for downstream observability.
         if token:
             scope.setdefault('auth_meta', {})['token_source'] = source
 

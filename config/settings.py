@@ -404,6 +404,10 @@ TRUSTED_PROXY_CIDRS = [
 # and ProjectConsumer connect(). The close code 4028 is used when exceeded.
 MAX_CONNECTIONS_PER_USER = int(os.getenv('MAX_CONNECTIONS_PER_USER', '5'))
 
+# PR-3 Fix #12: max inbound WebSocket message size, in bytes. Frames larger
+# than this are rejected with WS close code 4009. daphne's default is 1 MiB
+# (1048576); we default to 64 KiB which is plenty for JSON control messages.
+MAX_MESSAGE_SIZE = int(os.getenv('WS_MAX_MESSAGE_SIZE', '65536'))
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
