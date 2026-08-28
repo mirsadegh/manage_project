@@ -49,7 +49,7 @@ class ProjectConsumer(BaseConsumer):
         """Handle WebSocket connection to a project."""
         self.user = self.scope.get('user')
         self.project_slug = self.scope['url_route']['kwargs'].get('project_slug')
-        
+
         # Check authentication
         if not self.user or not self.user.is_authenticated:
             logger.warning(
@@ -57,33 +57,48 @@ class ProjectConsumer(BaseConsumer):
             )
             await self.close(code=4001)
             return
-        
+
         # Check project access
         project_info = await self._check_project_access()
-        
+
         if not project_info:
             logger.warning(
                 f"User {self.user.username} denied access to project {self.project_slug}"
             )
             await self.close(code=4003)
             return
-        
+        # PR-3 Fix #3: per-user connection cap
+        # we don't burn a cap slot on a denied connection).
+        if not await self._check_user_connection_cap():
+            logger.warning(
+                f"User {self.user.username} exceeded per-user WS connection cap"
+            )
+            await self.close(code=4028)
+            return
+
         self.project_id = project_info['id']
         self.group_name = f'project_{self.project_slug}'
+        # PR-3 Fix #1: control group for forced disconnect (token blacklist).
+        self.control_group = f'user_{self.user.id}_ws_control'
         self.connected_at = timezone.now()
-        
+
         # Add to project group
         await self.channel_layer.group_add(
             self.group_name,
             self.channel_name
         )
-        
+        # Add to control group
+        await self.channel_layer.group_add(
+            self.control_group,
+            self.channel_name
+        )
+
         # Track online user
         await self._add_online_user()
-        
+
         # Accept connection
         await self.accept()
-        
+
         # Notify others that user joined
         await self.channel_layer.group_send(
             self.group_name,
@@ -97,11 +112,11 @@ class ProjectConsumer(BaseConsumer):
                 },
             }
         )
-        
+
         # Send connection confirmation with initial data
         online_users = await self._get_online_users()
         project_summary = await self._get_project_summary()
-        
+
         await self.send_json({
             'type': 'connection_established',
             'message': f'Connected to project: {self.project_slug}',
@@ -114,9 +129,9 @@ class ProjectConsumer(BaseConsumer):
             },
             'timestamp': timezone.now().isoformat(),
         })
-        
+
         logger.info(f"User {self.user.username} joined project {self.project_slug}")
-    
+
     async def disconnect(self, close_code):
         """Handle disconnection from project."""
         if self.group_name:
@@ -131,21 +146,34 @@ class ProjectConsumer(BaseConsumer):
                     },
                 }
             )
-            
-            # Remove from group
+
+            # Remove from project group
             await self.channel_layer.group_discard(
                 self.group_name,
                 self.channel_name
             )
-        
+        # PR-3 Fix #1: leave the control group too.
+        if hasattr(self, 'control_group') and self.control_group:
+            await self.channel_layer.group_discard(
+                self.control_group,
+                self.channel_name
+            )
+
         if hasattr(self, 'user') and self.user and self.user.is_authenticated:
             await self._remove_online_user()
+            # PR-3 Fix #3: decrement per-user cap counter.
+            await self._release_user_connection_cap()
             duration = (timezone.now() - self.connected_at).seconds if self.connected_at else 0
             logger.info(
                 f"User {self.user.username} left project {self.project_slug} "
                 f"(code: {close_code}, duration: {duration}s)"
             )
-    
+
+    async def force_disconnect(self, event):
+        """PR-3 Fix #1: server-initiated close on token blacklist."""
+        reason = event.get('reason', 'force_disconnect')
+        logger.info(f"Force-disconnecting project WS for user {self.user.id}: {reason}")
+        await self.close(code=4001)
     async def receive(self, text_data):
         """Handle incoming messages from client."""
         try:
@@ -509,6 +537,23 @@ class ProjectConsumer(BaseConsumer):
         focus_map.pop(str(self.user.id), None)
         cache.set(cache_key, focus_map, 3600)
 
+    @database_sync_to_async
+    def _check_user_connection_cap(self):
+        """PR-3 Fix #3: increment per-user counter; return False at cap."""
+        from django.conf import settings
+        cap = getattr(settings, 'MAX_CONNECTIONS_PER_USER', 5)
+        cache_key = f"ws_user_{self.user.id}_connections"
+        current = cache.get(cache_key, 0)
+        if current >= cap:
+            return False
+        cache.set(cache_key, current + 1, 3600)
+        return True
 
+    @database_sync_to_async
+    def _release_user_connection_cap(self):
+        """PR-3 Fix #3: decrement per-user cap counter on disconnect."""
+        cache_key = f"ws_user_{self.user.id}_connections"
+        current = cache.get(cache_key, 0)
+        cache.set(cache_key, max(0, current - 1), 3600)
 
 

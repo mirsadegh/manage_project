@@ -392,10 +392,18 @@ WEBSOCKET_SETTINGS = {
     'RATE_LIMIT_WINDOW': 60,
 }
 
+# PR-3 Fix #2: trusted-proxy allowlist for X-Forwarded-For.
+# Comma-separated list of CIDRs. Empty (default) means no proxy is trusted;
+# the immediate peer address is used as the client IP. In production set this
+# to the CIDR of your reverse proxy (e.g. nginx, ALB).
+TRUSTED_PROXY_CIDRS = [
+    cidr.strip() for cidr in os.getenv('TRUSTED_PROXY_CIDRS', '').split(',') if cidr.strip()
+]
 
+# PR-3 Fix #3: per-user WebSocket connection cap. Enforced in NotificationConsumer
+# and ProjectConsumer connect(). The close code 4028 is used when exceeded.
+MAX_CONNECTIONS_PER_USER = int(os.getenv('MAX_CONNECTIONS_PER_USER', '5'))
 
-
-# Logging Configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

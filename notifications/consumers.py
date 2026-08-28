@@ -47,13 +47,11 @@ class BaseConsumer(AsyncWebsocketConsumer):
         await self.send_json(response)
     
     def get_client_ip(self):
-        """Extract client IP from scope."""
-        headers = dict(self.scope.get('headers', []))
-        x_forwarded_for = headers.get(b'x-forwarded-for', b'').decode()
-        if x_forwarded_for:
-            return x_forwarded_for.split(',')[0].strip()
-        client = self.scope.get('client')
-        return client[0] if client else 'unknown'
+        """Extract client IP from scope, using trusted-proxy resolver
+        (PR-3 Fix #2) so X-Forwarded-For is only honored behind known proxies.
+        """
+        from config.proxies import get_client_ip
+        return get_client_ip(self.scope)
 
 
 class NotificationConsumer(BaseConsumer):
@@ -87,7 +85,7 @@ class NotificationConsumer(BaseConsumer):
     async def connect(self):
         """Handle WebSocket connection."""
         self.user = self.scope.get('user')
-        
+
         # Check authentication
         if not self.user or not self.user.is_authenticated:
             auth_error = self.scope.get('auth_error', 'Authentication required')
@@ -96,27 +94,41 @@ class NotificationConsumer(BaseConsumer):
             )
             await self.close(code=4001)
             return
-        
+        # PR-3 Fix #3: per-user connection cap.
+        if not await self._check_user_connection_cap():
+            logger.warning(
+                f"User {self.user.username} exceeded per-user WS connection cap"
+            )
+            await self.close(code=4028)
+            return
+
         # Setup user's notification group
         self.group_name = f'user_{self.user.id}_notifications'
+        # PR-3 Fix #1: control group for forced disconnect (token blacklist).
+        self.control_group = f'user_{self.user.id}_ws_control'
         self.connected_at = timezone.now()
-        
+
         # Join notification group
         await self.channel_layer.group_add(
             self.group_name,
             self.channel_name
         )
-        
+        # Join control group
+        await self.channel_layer.group_add(
+            self.control_group,
+            self.channel_name
+        )
+
         # Track connection
         await self._track_connection(connected=True)
-        
+
         # Accept connection
         await self.accept()
-        
+
         # Send connection confirmation with initial data
         unread_count = await self._get_unread_count()
         recent_notifications = await self._get_recent_notifications(limit=5)
-        
+
         await self.send_json({
             'type': 'connection_established',
             'message': f'Connected to notifications',
@@ -128,9 +140,9 @@ class NotificationConsumer(BaseConsumer):
             'recent_notifications': recent_notifications,
             'timestamp': timezone.now().isoformat(),
         })
-        
+
         logger.info(f"User {self.user.username} connected to notifications")
-    
+
     async def disconnect(self, close_code):
         """Handle WebSocket disconnection."""
         if self.group_name:
@@ -138,14 +150,28 @@ class NotificationConsumer(BaseConsumer):
                 self.group_name,
                 self.channel_name
             )
-        
+        # PR-3 Fix #1: leave the control group too.
+        if hasattr(self, 'control_group') and self.control_group:
+            await self.channel_layer.group_discard(
+                self.control_group,
+                self.channel_name
+            )
+
         if hasattr(self, 'user') and self.user and self.user.is_authenticated:
             await self._track_connection(connected=False)
+            # PR-3 Fix #3: decrement per-user cap counter.
+            await self._release_user_connection_cap()
             duration = (timezone.now() - self.connected_at).seconds if self.connected_at else 0
             logger.info(
                 f"User {self.user.username} disconnected from notifications "
                 f"(code: {close_code}, duration: {duration}s)"
             )
+
+    async def force_disconnect(self, event):
+        """PR-3 Fix #1: server-initiated close on token blacklist."""
+        reason = event.get('reason', 'force_disconnect')
+        logger.info(f"Force-disconnecting notification WS for user {self.user.id}: {reason}")
+        await self.close(code=4001)
     
     async def receive(self, text_data):
         """Handle messages received from WebSocket client."""
@@ -338,13 +364,14 @@ class NotificationConsumer(BaseConsumer):
         
         queryset = Notification.objects.filter(
             recipient=self.user,
-            read=False
+            is_read=False
         )
-        
+
         if category:
             queryset = queryset.filter(notification_type=category)
-        
+
         return queryset.count()
+        
     
     @database_sync_to_async
     def _get_recent_notifications(self, limit=10, offset=0, category=None, unread_only=False):
@@ -357,8 +384,8 @@ class NotificationConsumer(BaseConsumer):
             queryset = queryset.filter(notification_type=category)
         
         if unread_only:
-            queryset = queryset.filter(read=False)
-        
+            queryset = queryset.filter(is_read=False)
+
         notifications = queryset.order_by('-created_at')[offset:offset + limit]
         
         return [
@@ -367,7 +394,7 @@ class NotificationConsumer(BaseConsumer):
                 'title': n.title,
                 'message': n.message,
                 'notification_type': n.notification_type,
-                'read': n.read,
+                'read': n.is_read,
                 'created_at': n.created_at.isoformat(),
                 'data': n.data if hasattr(n, 'data') else {},
             }
@@ -387,9 +414,9 @@ class NotificationConsumer(BaseConsumer):
             if hasattr(notification, 'mark_as_read'):
                 notification.mark_as_read()
             else:
-                notification.read = True
+                notification.is_read = True
                 notification.read_at = timezone.now()
-                notification.save(update_fields=['read', 'read_at'])
+                notification.save(update_fields=['is_read', 'read_at'])
             return True
         except Notification.DoesNotExist:
             return False
@@ -401,13 +428,13 @@ class NotificationConsumer(BaseConsumer):
         
         queryset = Notification.objects.filter(
             recipient=self.user,
-            read=False
+            is_read=False
         )
-        
+
         if category:
             queryset = queryset.filter(notification_type=category)
-        
-        return queryset.update(read=True, read_at=timezone.now())
+
+        return queryset.update(is_read=True, read_at=timezone.now())
     
     @database_sync_to_async
     def _delete_notification(self, notification_id):
@@ -435,4 +462,22 @@ class NotificationConsumer(BaseConsumer):
             current = cache.get(cache_key, 0)
             cache.set(cache_key, max(0, current - 1), 3600)
 
+    @database_sync_to_async
+    def _check_user_connection_cap(self):
+        """PR-3 Fix #3: increment a per-user counter; return False if at cap."""
+        from django.conf import settings
+        cap = getattr(settings, 'MAX_CONNECTIONS_PER_USER', 5)
+        cache_key = f"ws_user_{self.user.id}_connections"
+        current = cache.get(cache_key, 0)
+        if current >= cap:
+            return False
+        cache.set(cache_key, current + 1, 3600)
+        return True
+
+    @database_sync_to_async
+    def _release_user_connection_cap(self):
+        """PR-3 Fix #3: decrement the per-user cap counter on disconnect."""
+        cache_key = f"ws_user_{self.user.id}_connections"
+        current = cache.get(cache_key, 0)
+        cache.set(cache_key, max(0, current - 1), 3600)
 

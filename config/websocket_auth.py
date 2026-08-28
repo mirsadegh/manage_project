@@ -42,6 +42,9 @@ def get_user_from_token(token_string):
             return TokenValidationResult(user=user, is_valid=True)
         except CustomUser.DoesNotExist:
             cache.delete(cache_key)
+            # PR-3 Fix #1: prune from per-user set so invalidate doesn't
+            # try to delete a key that's already gone.
+            _untrack_token_for_user(cached_user_id, cache_key)
     
     try:
         # Validate token
@@ -72,6 +75,9 @@ def get_user_from_token(token_string):
         # Cache the result (cache for shorter than token lifetime)
         cache_ttl = min(300, max(0, exp - time.time())) if exp else 300
         cache.set(cache_key, user_id, int(cache_ttl))
+        # PR-3 Fix #1: track this cache key under the user so a blacklist
+        # can flush all of this user's cached tokens in one shot.
+        _track_token_for_user(user_id, cache_key, int(cache_ttl))
         
         return TokenValidationResult(user=user, is_valid=True)
     
@@ -94,10 +100,35 @@ def get_user_from_token(token_string):
 
 @database_sync_to_async
 def invalidate_user_token_cache(user_id):
-    """Invalidate cached tokens for a user."""
-    # This would require tracking cache keys per user
-    # For now, we rely on short cache TTL
-    pass
+    """Invalidate cached tokens for a user.
+
+    PR-3 Fix #1: scan the per-user set of token cache keys and delete
+    each, so that a blacklisted token can't be served from cache for
+    up to the (previously unbounded) cache TTL.
+    """
+    set_key = f"ws_user_tokens_{user_id}"
+    token_keys = cache.get(set_key) or []
+    for token_cache_key in token_keys:
+        cache.delete(token_cache_key)
+    cache.delete(set_key)
+
+
+def _track_token_for_user(user_id, token_cache_key, ttl):
+    """Append a token cache key to the per-user set (best-effort)."""
+    set_key = f"ws_user_tokens_{user_id}"
+    existing = cache.get(set_key) or []
+    if token_cache_key not in existing:
+        existing.append(token_cache_key)
+    cache.set(set_key, existing, max(ttl, 60))
+
+
+def _untrack_token_for_user(user_id, token_cache_key):
+    """Remove a token cache key from the per-user set (best-effort)."""
+    set_key = f"ws_user_tokens_{user_id}"
+    existing = cache.get(set_key) or []
+    if token_cache_key in existing:
+        existing.remove(token_cache_key)
+        cache.set(set_key, existing, 3600)
 
 
 class JWTAuthMiddleware(BaseMiddleware):
@@ -201,24 +232,11 @@ class JWTAuthMiddleware(BaseMiddleware):
         return token
     
     def _get_client_ip(self, scope):
-        """Extract client IP from scope."""
-        headers = dict(scope.get('headers', []))
-        
-        # Check for forwarded headers (when behind proxy)
-        x_forwarded_for = headers.get(b'x-forwarded-for', b'').decode()
-        if x_forwarded_for:
-            return x_forwarded_for.split(',')[0].strip()
-        
-        x_real_ip = headers.get(b'x-real-ip', b'').decode()
-        if x_real_ip:
-            return x_real_ip
-        
-        # Fall back to direct connection
-        client = scope.get('client')
-        if client:
-            return client[0]
-        
-        return 'unknown'
+        """Extract client IP from scope, honoring X-Forwarded-For only
+        when the immediate peer is a trusted proxy (PR-3 Fix #2).
+        """
+        from .proxies import get_client_ip as _resolve_ip
+        return _resolve_ip(scope)
     
     async def _check_rate_limit(self, client_ip):
         """Check if client has exceeded connection rate limit."""
