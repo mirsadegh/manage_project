@@ -134,9 +134,12 @@ class UserRegistrationSerializer(PasswordPairMixin, serializers.ModelSerializer)
 
     def validate_email(self, value: str) -> str:
         value = value.strip().lower()
+        # PR-4 L-1: do NOT distinguish "email already exists" from other
+        # failures. The error message below is generic on purpose to
+        # prevent email-enumeration on the registration endpoint.
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError(
-                'A user with this email already exists.'
+                'Registration failed. Please try again.'
             )
         return value
 

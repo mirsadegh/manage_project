@@ -1,4 +1,6 @@
 from rest_framework import viewsets, generics, status, permissions
+from rest_framework.throttling import ScopedRateThrottle
+import logging
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,11 +20,11 @@ from .serializers import (
     PasswordResetConfirmSerializer, LogoutSerializer,
     CustomTokenObtainPairSerializer, UserPublicSerializer,
 )
-from .permissions import IsOwnerOrReadOnly, IsAdminOrManager, IsAdmin
+from .permissions import IsAdminOrManager, IsAdmin
 from config.pagination import StandardResultsSetPagination
 from config.throttling import LoginRateThrottle
-
 User = get_user_model()
+logger = logging.getLogger('accounts')
 
 
 def _blacklist_user_tokens(user):
@@ -45,13 +47,21 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = UserRegistrationSerializer
+    # PR-4 M-1: cap registration to 5/hour per IP to deter mass-signup abuse.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'registration'
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # Generate tokens for immediate login after registration
+        # PR-4 L-2 (intentional): return access + refresh tokens here so
+        # the user is auto-logged-in after registration. The frontend
+        # benefits from fewer round-trips; the trade-off is a 7-day
+        # refresh token created without an explicit consent step.
+        # Documented as an accepted risk; revisit if user feedback
+        # changes.
         refresh = RefreshToken.for_user(user)
 
         return Response({
@@ -122,6 +132,9 @@ class PasswordResetRequestView(APIView):
     Request a password reset email.
     """
     permission_classes = [permissions.AllowAny]
+    # PR-4 M-2: attach ScopedRateThrottle so the existing
+    # `throttle_scope = 'password_reset'` actually applies (5/hour per IP).
+    throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'password_reset'
 
     def post(self, request):
@@ -130,29 +143,31 @@ class PasswordResetRequestView(APIView):
 
         email = serializer.validated_data['email']
 
+        # PR-4 M-3: never raise from this endpoint. SMTP failure must not
+        # leak which email exists (would be an enumeration oracle). Log
+        # the error and always return 200 with the generic message.
         try:
             user = User.objects.get(email=email)
 
-            # Generate reset token
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-            # Build reset URL (adjust based on your frontend)
             reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
 
-            # Send email
-            send_mail(
-                subject='Password Reset Request',
-                message=f'Click the link to reset your password: {reset_url}',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=False,
-            )
+            try:
+                send_mail(
+                    subject='Password Reset Request',
+                    message=f'Click the link to reset your password: {reset_url}',
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[email],
+                    fail_silently=True,
+                )
+            except Exception as exc:
+                logger.exception(
+                    'Password reset email failed for uid=%s: %s', user.pk, exc,
+                )
         except User.DoesNotExist:
-            # Don't reveal whether email exists
             pass
 
-        # Always return success to prevent email enumeration
         return Response({
             'message': 'If an account with this email exists, a password reset link has been sent.'
         })

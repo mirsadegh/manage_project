@@ -288,9 +288,11 @@ REST_FRAMEWORK = {
         'project_creation': '10/hour',
         'task_creation': '50/hour',
         'password_reset': '5/hour',
+        # PR-4 M-1: cap anonymous user self-registration to deter
+        # mass-signup abuse.
+        'registration': '5/hour',
     }
 }
-
 
 # JWT Settings
 
