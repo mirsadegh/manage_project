@@ -43,8 +43,8 @@ class IsTeamMember(permissions.BasePermission):
         else:
             team = obj
         
-        # Check if user is member or team is public
-        return team.members.filter(id=request.user.id).exists() or team.is_public
+        # Check if user is a member of this team
+        return team.members.filter(id=request.user.id).exists()
 
 
 class CanManageTeamMeeting(permissions.BasePermission):

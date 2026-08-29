@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Project, ProjectMember
-from accounts.serializers import UserSerializer
+from accounts.serializers import UserSerializer, UserPublicSerializer
 from comments.serializers import CommentSerializer
 from files.serializers import AttachmentSerializer
 
@@ -19,8 +19,8 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     """Project list serializer"""
     
-    owner = UserSerializer(read_only=True)
-    manager = UserSerializer(read_only=True)
+    owner = UserPublicSerializer(read_only=True)
+    manager = UserPublicSerializer(read_only=True)
     manager_id = serializers.IntegerField(write_only=True, required=False)
     
     is_overdue = serializers.ReadOnlyField()

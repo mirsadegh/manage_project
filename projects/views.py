@@ -2,6 +2,7 @@ from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
+from django.http import Http404
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Project, ProjectMember
 from .serializers import (
@@ -89,19 +90,43 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 Q(owner=user) |
                 Q(manager=user) |
                 Q(members__user=user) |
-                Q(is_public=True)
+                Q(members__is_active=True)
             ).distinct()
 
         return base_qs
-    
-    
     def get_object(self):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         slug = self.kwargs.get(lookup_url_kwarg)
-        obj = get_object_or_404(self.get_queryset(), slug=slug)
-        self.check_object_permissions(self.request, obj)
-        return obj
-   
+        user = self.request.user
+
+        # Superusers and admins bypass the access check
+        if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
+            try:
+                return Project.objects.get(slug=slug)
+            except Project.DoesNotExist:
+                from django.http import Http404
+                raise Http404("Project not found")
+
+        # First check if the project exists at all (so non-members get 403, not 404)
+        try:
+            project = Project.objects.get(slug=slug)
+        except Project.DoesNotExist:
+            from django.http import Http404
+            raise Http404("Project not found")
+
+        # Then check access
+        has_access = (
+            project.owner == user or
+            project.manager == user or
+            project.members.filter(user=user, is_active=True).exists() or
+            project.is_public
+        )
+
+        if not has_access:
+            raise PermissionDenied("You do not have access to this project")
+
+        self.check_object_permissions(self.request, project)
+        return project
     
     
     def perform_create(self, serializer):
@@ -142,12 +167,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
             )
 
         if existing and not existing.is_active:
-            # Re-activate a member who had left
-            existing.is_active = True
-            existing.left_at = None
-            existing.role = serializer.validated_data.get('role', existing.role)
-            existing.save(update_fields=['is_active', 'left_at', 'role'])
-            member = existing
+            # H-1: a user who has left the project cannot be re-added
+            return Response(
+                {'error': 'This user has left the project and cannot be re-added'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         else:
             member = serializer.save(project=project)
           # Notify the new member
@@ -185,23 +209,22 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def remove_member(self, request, slug=None, member_id=None):
         """Remove member from project"""
         project = self.get_object()
+        # M-1: only active members can be removed; inactive ones return 404
         try:
-            member = project.members.get(id=member_id)
-            
-            # Prevent removing the owner
-            if member.user == project.owner:
-                return Response(
-                    {'error': 'Cannot remove project owner'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            member.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            member = project.members.get(id=member_id, is_active=True)
         except ProjectMember.DoesNotExist:
             return Response(
-                {'error': 'Member not found'},
+                {'error': 'Member not found or already removed'},
                 status=status.HTTP_404_NOT_FOUND
             )
+        # Prevent removing the owner
+        if member.user == project.owner:
+            return Response(
+                {'error': 'Cannot remove project owner'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        member.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
             
             
     @action(detail=True, methods=['get'])
