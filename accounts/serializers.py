@@ -88,21 +88,29 @@ class BaseUserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'date_joined')
 
-
 class UserSerializer(BaseUserSerializer):
     """Compact user serializer for list views."""
 
 
+class UserPublicSerializer(serializers.ModelSerializer):
+    """Public user data — safe to expose to any authenticated user.
+
+    Excludes email, phone_number, bio, last_login, hourly_rate. Use
+    UserDetailSerializer for admin/manager/owner reads.
+    """
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'username', 'first_name', 'last_name',
+            'role', 'department', 'is_available',
+            'job_title', 'profile_picture',
+        )
+        read_only_fields = fields
+
+
 class UserDetailSerializer(BaseUserSerializer):
     """Detailed user serializer for retrieve and profile views."""
-
-    class Meta(BaseUserSerializer.Meta):
-        fields = BaseUserSerializer.Meta.fields + (
-            'phone_number', 'bio', 'profile_picture', 'last_login',
-        )
-        read_only_fields = BaseUserSerializer.Meta.read_only_fields + (
-            'last_login', 'role',
-        )
 
 
 class UserRegistrationSerializer(PasswordPairMixin, serializers.ModelSerializer):
@@ -199,7 +207,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def _user_claims(user: Any) -> dict[str, Any]:
         return {
             'username': user.username,
-            'email': user.email,
             'role': user.role,
         }
 

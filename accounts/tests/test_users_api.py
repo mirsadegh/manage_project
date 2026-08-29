@@ -115,10 +115,15 @@ class TestUserPermissions:
         response = admin_client.get(user_list_url)
         assert response.status_code == status.HTTP_200_OK
 
-    def test_developer_can_list_users(self, dev_client, user_list_url):
-        """Test that a developer can list all users."""
+    def test_developer_cannot_list_users(self, dev_client, user_list_url):
+        """PR-4 H-1: developers MUST NOT list all users (would leak emails).
+
+        The pre-PR-4 behavior allowed any authenticated user to list every
+        account, which was a mass-user-enumeration vulnerability. This
+        test is kept (renamed) to lock in the secure default.
+        """
         response = dev_client.get(user_list_url)
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_403_FORBIDDEN
     
     def test_unauthenticated_cannot_list_users(self, api_client, user_list_url):
         """Test that an unauthenticated user cannot list users."""

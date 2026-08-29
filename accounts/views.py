@@ -13,14 +13,10 @@ from django.core.mail import send_mail
 from django.conf import settings
 from .models import CustomUser
 from .serializers import (
-    UserSerializer,
-    UserDetailSerializer,
-    UserRegistrationSerializer,
-    ChangePasswordSerializer,
-    CustomTokenObtainPairSerializer,
-    LogoutSerializer,
-    PasswordResetRequestSerializer,
-    PasswordResetConfirmSerializer,
+    UserSerializer, UserDetailSerializer, UserRegistrationSerializer,
+    ChangePasswordSerializer, PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer, LogoutSerializer,
+    CustomTokenObtainPairSerializer, UserPublicSerializer,
 )
 from .permissions import IsOwnerOrReadOnly, IsAdminOrManager, IsAdmin
 from config.pagination import StandardResultsSetPagination
@@ -29,20 +25,35 @@ from config.throttling import LoginRateThrottle
 User = get_user_model()
 
 
+def _blacklist_user_tokens(user):
+    """PR-4: helper — blacklist all outstanding refresh tokens for a user.
+
+    Called on password change, password reset, and account deactivation
+    so other-device sessions are forced to re-authenticate. Errors on
+    individual rows are swallowed (best-effort) so a single bad row
+    cannot block the call.
+    """
+    for token in OutstandingToken.objects.filter(user=user):
+        try:
+            BlacklistedToken.objects.get_or_create(token=token)
+        except Exception:
+            pass
+
+
 class RegisterView(generics.CreateAPIView):
     """User registration endpoint."""
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = UserRegistrationSerializer
-    
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
+
         # Generate tokens for immediate login after registration
         refresh = RefreshToken.for_user(user)
-        
+
         return Response({
             'message': 'Registration successful',
             'user': {
@@ -64,7 +75,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """
     serializer_class = CustomTokenObtainPairSerializer
     throttle_classes = [LoginRateThrottle]
-    
+
     def post(self, request, *args, **kwargs):
         # Throttling is automatically applied by DRF before this method runs
         return super().post(request, *args, **kwargs)
@@ -76,24 +87,19 @@ class LogoutView(APIView):
     Supports both single token logout and logout from all devices.
     """
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         refresh_token = serializer.validated_data.get('refresh')
         logout_all = serializer.validated_data.get('logout_all', False)
-        
+
         if logout_all:
-            # Blacklist all tokens for this user
-            tokens = OutstandingToken.objects.filter(user=request.user)
-            for token in tokens:
-                try:
-                    BlacklistedToken.objects.get_or_create(token=token)
-                except Exception:
-                    pass
+            # PR-4: use the shared helper instead of inlining the loop.
+            _blacklist_user_tokens(request.user)
             return Response({'message': 'Successfully logged out from all devices'})
-        
+
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
@@ -104,7 +110,7 @@ class LogoutView(APIView):
                     {'error': 'Invalid or expired token'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-        
+
         return Response(
             {'error': 'Refresh token is required'},
             status=status.HTTP_400_BAD_REQUEST
@@ -117,23 +123,23 @@ class PasswordResetRequestView(APIView):
     """
     permission_classes = [permissions.AllowAny]
     throttle_scope = 'password_reset'
-    
+
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         email = serializer.validated_data['email']
-        
+
         try:
             user = User.objects.get(email=email)
-            
+
             # Generate reset token
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
-            
+
             # Build reset URL (adjust based on your frontend)
             reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
-            
+
             # Send email
             send_mail(
                 subject='Password Reset Request',
@@ -145,7 +151,7 @@ class PasswordResetRequestView(APIView):
         except User.DoesNotExist:
             # Don't reveal whether email exists
             pass
-        
+
         # Always return success to prevent email enumeration
         return Response({
             'message': 'If an account with this email exists, a password reset link has been sent.'
@@ -157,15 +163,15 @@ class PasswordResetConfirmView(APIView):
     Confirm password reset with token and set new password.
     """
     permission_classes = [permissions.AllowAny]
-    
+
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         uid = serializer.validated_data['uid']
         token = serializer.validated_data['token']
         new_password = serializer.validated_data['new_password']
-        
+
         try:
             user_id = force_str(urlsafe_base64_decode(uid))
             user = User.objects.get(pk=user_id)
@@ -174,24 +180,19 @@ class PasswordResetConfirmView(APIView):
                 {'error': 'Invalid reset link'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         if not default_token_generator.check_token(user, token):
             return Response(
                 {'error': 'Invalid or expired reset link'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         user.set_password(new_password)
         user.save()
-        
-        # Blacklist all existing tokens for security
-        tokens = OutstandingToken.objects.filter(user=user)
-        for outstanding_token in tokens:
-            try:
-                BlacklistedToken.objects.get_or_create(token=outstanding_token)
-            except Exception:
-                pass
-        
+
+        # PR-4: use the shared helper to invalidate other sessions.
+        _blacklist_user_tokens(user)
+
         return Response({'message': 'Password has been reset successfully'})
 
 
@@ -204,12 +205,18 @@ class UserViewSet(viewsets.ModelViewSet):
     search_fields = ['username', 'email', 'first_name', 'last_name', 'job_title']
     ordering_fields = ['date_joined', 'username']
     ordering = ['-date_joined']
-    
+
     def get_permissions(self):
-        """Custom permissions based on action."""
+        """Custom permissions based on action.
+
+        PR-4: list/retrieve now require admin/manager role. Reads from
+        the role context still work because the WebSocket and other
+        in-process consumers are unaffected; this only changes the
+        HTTP API.
+        """
         permission_map = {
-            'list': [permissions.IsAuthenticated],
-            'retrieve': [permissions.IsAuthenticated],
+            'list': [IsAdminOrManager],
+            'retrieve': [IsAdminOrManager],
             'me': [permissions.IsAuthenticated],
             'change_password': [permissions.IsAuthenticated],
             'deactivate_account': [permissions.IsAuthenticated],
@@ -217,22 +224,59 @@ class UserViewSet(viewsets.ModelViewSet):
             'update': [IsAdmin],
             'partial_update': [IsAdmin],
             'destroy': [IsAdmin],
+            'activate': [IsAdmin],
         }
         permission_classes = permission_map.get(self.action, [permissions.IsAuthenticated])
         return [permission() for permission in permission_classes]
-    
+
+    def _user_can_see_private(self, request, obj=None):
+        """PR-4: helper to decide if the requester can see the full
+        UserDetailSerializer (email/phone/bio/last_login). True for
+        admin/manager, or the user viewing their own record.
+        """
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.role in {
+            CustomUser.Role.ADMIN,
+            CustomUser.Role.PROJECT_MANAGER,
+            CustomUser.Role.TEAM_LEAD,
+        }:
+            return True
+        # Owner can always see their own full profile.
+        if obj is not None and obj == request.user:
+            return True
+        if obj is None:
+            # No specific obj (e.g. /me/): always allow.
+            return True
+        return False
+
     def get_serializer_class(self):
-        if self.action in ['retrieve', 'me']:
+        # PR-4: list and retrieve return the public serializer to
+        # non-privileged callers; admin/manager get the full
+        # UserDetailSerializer. The /me/ endpoint always returns
+        # UserDetailSerializer (caller is the owner).
+        if self.action == 'me':
             return UserDetailSerializer
+        if self.action in ('list', 'retrieve'):
+            request = self.request
+            obj = None
+            if self.action == 'retrieve':
+                try:
+                    obj = self.get_object()
+                except Exception:
+                    obj = None
+            if self._user_can_see_private(request, obj):
+                return UserDetailSerializer
+            return UserPublicSerializer
         return UserSerializer
-    
+
     @action(detail=False, methods=['get', 'put', 'patch'])
     def me(self, request):
         """Get or update current user profile."""
         if request.method == 'GET':
             serializer = UserDetailSerializer(request.user)
             return Response(serializer.data)
-        
+
         serializer = UserDetailSerializer(
             request.user,
             data=request.data,
@@ -241,7 +285,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
-    
+
     @action(detail=False, methods=['post'])
     def change_password(self, request):
         """Change user password."""
@@ -250,52 +294,48 @@ class UserViewSet(viewsets.ModelViewSet):
             context={'request': request}
         )
         serializer.is_valid(raise_exception=True)
-        
+
         user = request.user
         if not user.check_password(serializer.validated_data['old_password']):
             return Response(
                 {'old_password': ['Wrong password.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+        # PR-4 Fix M-5: blacklist other sessions before changing the
+        # password, so other devices must re-authenticate.
+        _blacklist_user_tokens(user)
+
         user.set_password(serializer.validated_data['new_password'])
         user.save()
-        
-        # Optionally blacklist all tokens except current one
-        # This forces re-login on other devices
-        
+
         return Response({'message': 'Password updated successfully'})
-    
+
     @action(detail=False, methods=['post'])
     def deactivate_account(self, request):
         """Allow user to deactivate their own account."""
         password = request.data.get('password')
-        
+
         if not password:
             return Response(
                 {'password': ['Password is required to deactivate account.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         if not request.user.check_password(password):
             return Response(
                 {'password': ['Wrong password.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         request.user.is_active = False
         request.user.save()
-        
-        # Blacklist all tokens
-        tokens = OutstandingToken.objects.filter(user=request.user)
-        for token in tokens:
-            try:
-                BlacklistedToken.objects.get_or_create(token=token)
-            except Exception:
-                pass
-        
+
+        # PR-4: use the shared helper instead of inlining.
+        _blacklist_user_tokens(request.user)
+
         return Response({'message': 'Account deactivated successfully'})
-    
+
     @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def activate(self, request, pk=None):
         """Admin endpoint to activate a user account."""
@@ -303,4 +343,3 @@ class UserViewSet(viewsets.ModelViewSet):
         user.is_active = True
         user.save()
         return Response({'message': f'User {user.username} activated successfully'})
- 
