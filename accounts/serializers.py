@@ -122,22 +122,45 @@ class UserRegistrationSerializer(PasswordPairMixin, serializers.ModelSerializer)
     password = password_field()
     password_confirm = password_field()
 
+    # PR-4 L-1: drop the model's auto-added UniqueValidator on both
+    # email and username; the generic message prevents enumeration.
+    # Uniqueness is re-checked in validate_email/validate_username below
+    # and in the DB constraint (create() catches IntegrityError).
+    email = serializers.EmailField(
+        required=True, allow_blank=False,
+        error_messages={
+            'required': 'Registration failed. Please try again.',
+            'blank': 'Registration failed. Please try again.',
+            'invalid': 'Registration failed. Please try again.',
+            'null': 'Registration failed. Please try again.',
+        },
+    )
+    username = serializers.CharField(
+        required=True, allow_blank=False,
+        error_messages={
+            'required': 'Registration failed. Please try again.',
+            'blank': 'Registration failed. Please try again.',
+            'null': 'Registration failed. Please try again.',
+        },
+    )
+
     class Meta:
         model = User
         fields = (
             'username', 'email', 'password', 'password_confirm',
             'first_name', 'last_name',
         )
-        extra_kwargs = {
-            'email': {'required': True, 'allow_blank': False},
-        }
 
     def validate_email(self, value: str) -> str:
         value = value.strip().lower()
-        # PR-4 L-1: do NOT distinguish "email already exists" from other
-        # failures. The error message below is generic on purpose to
-        # prevent email-enumeration on the registration endpoint.
         if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError(
+                'Registration failed. Please try again.'
+            )
+        return value
+
+    def validate_username(self, value: str) -> str:
+        if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError(
                 'Registration failed. Please try again.'
             )
