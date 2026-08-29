@@ -1,9 +1,10 @@
 from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from notifications.utils import send_realtime_notification, broadcast_project_update
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Task, TaskList, TaskLabel, TaskDependency
+from notifications.utils import send_realtime_notification, broadcast_project_update
 from .serializers import (
     TaskSerializer,
     TaskDetailSerializer,
@@ -30,29 +31,41 @@ from config.decorators import require_task_assignee, require_role
 
 
 class TaskListViewSet(viewsets.ModelViewSet):
-    """Task list CRUD operations"""
-    queryset = TaskList.objects.all()
-
-    def get_queryset(self):
-        # Optimize task_count with SQL COUNT to avoid N+1 queries
-        from django.db.models import Count
-        return super().get_queryset().annotate(
-            task_count=Count('tasks')
-        )
+    """Task list CRUD operations (T-5: scoped to accessible projects)."""
     serializer_class = TaskListSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['project']
 
     def get_queryset(self):
-        # Optimize task_count with SQL COUNT to avoid N+1 queries
-        from django.db.models import Count
-        return TaskList.objects.all().annotate(
-            task_count=Count('tasks')
-        )
+        from django.db.models import Count, Q
+        user = self.request.user
+        if user.is_superuser or getattr(user, 'role', None) in ['ADMIN', 'PM']:
+            base = TaskList.objects.all()
+        else:
+            base = TaskList.objects.filter(
+                Q(project__owner=user) |
+                Q(project__manager=user) |
+                Q(project__members__user=user, project__members__is_active=True) |
+                Q(created_by=user)
+            ).distinct()
+        return base.annotate(task_count=Count('tasks'))
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        from projects.models import ProjectMember
+        project = serializer.validated_data.get('project')
+        user = self.request.user
+        if project is not None and not (
+            project.owner == user or
+            project.manager == user or
+            ProjectMember.objects.filter(
+                project=project, user=user, is_active=True,
+            ).exists() or
+            getattr(user, 'role', None) in ['ADMIN', 'PM']
+        ):
+            raise PermissionDenied("You must be a project member to create task lists")
+        serializer.save(created_by=user)
+
 
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -106,36 +119,44 @@ class TaskViewSet(viewsets.ModelViewSet):
         return TaskSerializer
     
     def get_queryset(self):
-        """Filter tasks based on user permissions for list views only."""
+        """Filter tasks based on user permissions."""
+        from django.db.models import Q
         user = self.request.user
 
-        # Detail actions must use the full queryset so object-level
-        # permissions can decide between 401/403 (never a 500 on AnonymousUser).
+        # Detail actions use the full queryset so object-level permissions
+        # can decide between 401/403 (never a 500 on AnonymousUser).
         if self.action not in ['list', 'my_tasks', 'all_tasks']:
             return Task.objects.all()
 
         if not getattr(user, 'is_authenticated', False):
             return Task.objects.none()
 
-        if user.is_superuser or user.role == 'ADMIN':
+        if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
             return Task.objects.all()
-        
-        # Detail actions use the full queryset so object-level permissions
-        # can decide between 403 and 404.
-        if self.action not in ['list', 'my_tasks', 'all_tasks']:
-            return Task.objects.all()
-        
-        # Users see tasks from projects they have access to
-        from projects.models import ProjectMember
-        from django.db.models import Q
-        
-        return Task.objects.filter(
-            Q(project__owner=user) |
-            Q(project__manager=user) |
-            Q(project__members__user=user, project__members__is_active=True) |
-            Q(assignee=user) |
-            Q(created_by=user)
-        ).distinct()
+
+        if self.action == 'list':
+            # T-1: only project members see tasks via list
+            return Task.objects.filter(
+                Q(project__owner=user) |
+                Q(project__manager=user) |
+                Q(project__members__user=user, project__members__is_active=True)
+            ).distinct()
+
+        if self.action == 'my_tasks':
+            # User's own tasks across all accessible projects
+            return Task.objects.filter(
+                Q(assignee=user) | Q(created_by=user)
+            ).distinct()
+
+        if self.action == 'all_tasks':
+            # Admin-only - admins handled above; TL/PM see only their projects
+            return Task.objects.filter(
+                Q(project__owner=user) |
+                Q(project__manager=user) |
+                Q(project__members__user=user, project__members__is_active=True)
+            ).distinct()
+
+        return Task.objects.all()
     
     def perform_create(self, serializer):
         """
@@ -179,14 +200,28 @@ class TaskViewSet(viewsets.ModelViewSet):
         """Assign task to user"""
         task = self.get_object()
         user_id = request.data.get('user_id')
-        
+
+        # T-2: caller must be a project member (or admin/PM)
+        from projects.models import ProjectMember
+        is_member = (
+            task.project.owner == request.user or
+            task.project.manager == request.user or
+            ProjectMember.objects.filter(
+                project=task.project, user=request.user, is_active=True,
+            ).exists() or
+            getattr(request.user, 'role', None) in ['ADMIN', 'PM']
+        )
+        if not is_member:
+            return Response(
+                {'error': 'You must be a project member to assign tasks'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         try:
             from accounts.models import CustomUser
             user = CustomUser.objects.get(id=user_id)
-
             task.assignee = user
             task.save()
-            
             serializer = self.get_serializer(task)
             return Response(serializer.data)
         except CustomUser.DoesNotExist:
@@ -406,38 +441,26 @@ class TaskViewSet(viewsets.ModelViewSet):
             'message': f'Logged {hours_float} hours',
             'total_hours': task.actual_hours
         })
-    
+
     @action(detail=False, methods=['post'])
-    @require_role('ADMIN', 'PM', 'TL')
     def bulk_assign(self, request):
         """
-        Bulk assign tasks to users - only managers.
+        Bulk assign tasks to a user.
 
-        This endpoint allows administrators (ADMIN), project managers (PM), and team leads (TL) 
-        to assign multiple tasks to a single user in one operation. The endpoint expects:
-        - task_ids: List of task IDs to be assigned (required)
-        - assignee_id: The ID of the user to assign tasks to (required)
-
-        Returns:
-        - Success: Message with count of updated tasks and assignee username
-        - Error: 400 if required parameters missing, 404 if user not found
+        T-3: only assigns tasks in projects the caller can access.
+        ADMIN/PM keep cross-project access.
         """
-        # Extract task IDs and assignee ID from request data
         task_ids = request.data.get('task_ids', [])
         assignee_id = request.data.get('assignee_id')
 
-        # Validate required parameters
         if not task_ids or not assignee_id:
             return Response(
                 {'error': 'task_ids and assignee_id required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Import user model dynamically
         from accounts.models import CustomUser
-
         try:
-            # Fetch target user by ID
             assignee = CustomUser.objects.get(id=assignee_id)
         except CustomUser.DoesNotExist:
             return Response(
@@ -445,15 +468,22 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Update all matching tasks with new assignee
-        tasks = Task.objects.filter(id__in=task_ids)
-        updated_count = tasks.update(assignee=assignee)
+        from django.db.models import Q
+        if request.user.is_superuser or getattr(request.user, 'role', None) in ['ADMIN', 'PM']:
+            accessible_tasks = Task.objects.filter(id__in=task_ids)
+        else:
+            accessible_tasks = Task.objects.filter(id__in=task_ids).filter(
+                Q(project__owner=request.user) |
+                Q(project__manager=request.user) |
+                Q(project__members__user=request.user, project__members__is_active=True)
+            )
 
-        # Return success response with operation details
+        updated_count = accessible_tasks.update(assignee=assignee)
         return Response({
             'message': f'Assigned {updated_count} tasks to {assignee.username}',
             'updated_tasks': updated_count
         })
+
         
         
     @action(detail=True, methods=['get'])
@@ -536,12 +566,35 @@ class TaskLabelViewSet(viewsets.ModelViewSet):
     Labels can be filtered by project using the 'project' query parameter.
     Example usage:
     - GET /api/labels/ - List all labels - GET /api/labels/?project=1 - List labels for project with ID1 - POST /api/labels/ - Create a new label - PUT /api/labels/{id}/ - Update a label - DELETE /api/labels/{id}/ - Delete a label """
-    queryset = TaskLabel.objects.all()
     serializer_class = TaskLabelSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['project']
-    
-       
-   
-    
-    
+
+    def get_queryset(self):
+        # T-4: scope to projects the caller can access
+        from django.db.models import Q
+        user = self.request.user
+        if user.is_superuser or getattr(user, 'role', None) in ['ADMIN', 'PM']:
+            return TaskLabel.objects.all()
+        return TaskLabel.objects.filter(
+            Q(project__owner=user) |
+            Q(project__manager=user) |
+            Q(project__members__user=user, project__members__is_active=True) |
+            Q(created_by=user)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        # T-4: require project membership on label creation
+        from projects.models import ProjectMember
+        project = serializer.validated_data.get('project')
+        user = self.request.user
+        if project is not None and not (
+            project.owner == user or
+            project.manager == user or
+            ProjectMember.objects.filter(
+                project=project, user=user, is_active=True,
+            ).exists() or
+            getattr(user, 'role', None) in ['ADMIN', 'PM']
+        ):
+            raise PermissionDenied("You must be a project member to create labels")
+        serializer.save(created_by=user)
