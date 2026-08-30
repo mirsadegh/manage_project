@@ -338,19 +338,18 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def my_tasks(self, request):
-        """Get tasks assigned to current user"""
-        tasks = self.get_queryset().filter(assignee=request.user)
-        
-        # Apply filters
+        """Get tasks where the user is assignee OR creator."""
+        from django.db.models import Q
+        tasks = self.get_queryset().filter(
+            Q(assignee=request.user) | Q(created_by=request.user)
+        )
         status_filter = request.query_params.get('status')
         if status_filter:
             tasks = tasks.filter(status=status_filter)
-        
         page = self.paginate_queryset(tasks)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
-        
         serializer = self.get_serializer(tasks, many=True)
         return Response(serializer.data)
 
@@ -579,8 +578,7 @@ class TaskLabelViewSet(viewsets.ModelViewSet):
         return TaskLabel.objects.filter(
             Q(project__owner=user) |
             Q(project__manager=user) |
-            Q(project__members__user=user, project__members__is_active=True) |
-            Q(created_by=user)
+            Q(project__members__user=user, project__members__is_active=True)
         ).distinct()
 
     def perform_create(self, serializer):
@@ -597,4 +595,4 @@ class TaskLabelViewSet(viewsets.ModelViewSet):
             getattr(user, 'role', None) in ['ADMIN', 'PM']
         ):
             raise PermissionDenied("You must be a project member to create labels")
-        serializer.save(created_by=user)
+        serializer.save()
