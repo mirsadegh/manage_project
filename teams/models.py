@@ -81,9 +81,22 @@ class Team(models.Model):
     
     def remove_member(self, user):
         """
-        Remove a member from the team.
+        Soft-remove a member from the team.
+
+        Sets is_active=False and left_at=now() instead of deleting the
+        row so membership history is preserved. Returns True if a
+        membership was deactivated, False otherwise.
         """
-        TeamMembership.objects.filter(team=self, user=user).delete()
+        from django.utils import timezone
+        membership = self.memberships.filter(
+            user=user, is_active=True
+        ).first()
+        if membership is None:
+            return False
+        membership.is_active = False
+        membership.left_at = timezone.now()
+        membership.save(update_fields=['is_active', 'left_at'])
+        return True
         
     
     def is_leader(self, user):

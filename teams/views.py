@@ -302,40 +302,53 @@ class TeamViewSet(viewsets.ModelViewSet):
                 {'error': '⚠️ project_id is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+        # TM-1: Verify caller has access to the project before assigning
+        from projects.models import Project, ProjectMember as _PM
         try:
-            from projects.models import Project
             project = Project.objects.get(id=project_id)
-            
-            # ✅ Check if already assigned
-            if TeamProject.objects.filter(team=team, project=project).exists():
-                return Response(
-                    {'error': '⚠️ Project already assigned to this team'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # 💾 Create assignment
-            team_project = TeamProject.objects.create(
-                team=team,
-                project=project,
-                assigned_by=request.user,
-                is_primary=is_primary
-            )
-            
-            # 📊 Update team stats
-            team.total_projects += 1
-            team.save(update_fields=['total_projects'])
-            
-            return Response(
-                TeamProjectSerializer(team_project).data,
-                status=status.HTTP_201_CREATED
-            )
-            
         except Project.DoesNotExist:
             return Response(
                 {'error': '❌ Project not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+        has_project_access = (
+            project.owner == request.user or
+            project.manager == request.user or
+            _PM.objects.filter(
+                project=project, user=request.user, is_active=True,
+            ).exists() or
+            getattr(request.user, 'role', None) in ['ADMIN', 'PM']
+        )
+        if not has_project_access:
+            return Response(
+                {'error': '❌ You do not have access to this project'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ✅ Check if already assigned
+        if TeamProject.objects.filter(team=team, project=project).exists():
+            return Response(
+                {'error': '⚠️ Project already assigned to this team'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 💾 Create assignment
+        team_project = TeamProject.objects.create(
+            team=team,
+            project=project,
+            assigned_by=request.user,
+            is_primary=is_primary
+        )
+
+        # 📊 Update team stats
+        team.total_projects += 1
+        team.save(update_fields=['total_projects'])
+
+        return Response(
+            TeamProjectSerializer(team_project).data,
+            status=status.HTTP_201_CREATED
+        )
     
     @action(detail=True, methods=['get'])
     def meetings(self, request, pk=None):
@@ -375,19 +388,32 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        # TM-2: validate all attendee_ids are active team members
+        attendee_ids = request.data.get('attendee_ids', [])
+        if attendee_ids:
+            valid = set(
+                team.memberships.filter(
+                    user__id__in=attendee_ids, is_active=True,
+                ).values_list('user_id', flat=True)
+            )
+            invalid = set(attendee_ids) - valid
+            if invalid:
+                return Response(
+                    {'error': f'❌ Users {sorted(invalid)} are not team members'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         serializer = TeamMeetingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         meeting = serializer.save(
             team=team,
             organizer=request.user
         )
-        
         # 📧 Notify attendees
         from notifications.models import Notification
-        attendee_ids = request.data.get('attendee_ids', [])
         from accounts.models import CustomUser
-        
+
         for user_id in attendee_ids:
             try:
                 user = CustomUser.objects.get(id=user_id)
