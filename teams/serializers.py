@@ -87,7 +87,7 @@ class TeamInvitationSerializer(serializers.ModelSerializer):
             'invited_by', 'role', 'status', 'message', 'expires_at',
             'is_expired', 'created_at', 'responded_at'
         ]
-        read_only_fields = ['id', 'invited_by', 'status', 'created_at', 'responded_at']
+        read_only_fields = ['id', 'invited_by', 'status', 'expires_at', 'created_at', 'responded_at']
 
 
 class TeamProjectSerializer(serializers.ModelSerializer):
@@ -113,7 +113,7 @@ class TeamProjectSerializer(serializers.ModelSerializer):
 
 class TeamMeetingSerializer(serializers.ModelSerializer):
     """Serializer for team meetings"""
-    
+
     team = TeamSerializer(read_only=True)
     organizer = UserSerializer(read_only=True)
     attendees = UserSerializer(many=True, read_only=True)
@@ -124,7 +124,7 @@ class TeamMeetingSerializer(serializers.ModelSerializer):
     )
     is_upcoming = serializers.ReadOnlyField()
     is_past = serializers.ReadOnlyField()
-    
+
     class Meta:
         model = TeamMeeting
         fields = [
@@ -135,6 +135,13 @@ class TeamMeetingSerializer(serializers.ModelSerializer):
             'is_upcoming', 'is_past', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        attendee_ids = validated_data.pop('attendee_ids', None)
+        meeting = super().create(validated_data)
+        if attendee_ids:
+            meeting.attendees.set(attendee_ids)
+        return meeting
 
 
 class TeamGoalSerializer(serializers.ModelSerializer):

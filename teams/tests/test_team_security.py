@@ -172,7 +172,6 @@ class TestScheduleMeetingValidation:
     def test_schedule_meeting_rejects_non_member_attendees(
         self, api_client, team, leader, outsider,
     ):
-        """TM-2: outsider (not in team) cannot be an attendee."""
         api_client.force_authenticate(user=leader)
         response = api_client.post(
             reverse('team-schedule-meeting', kwargs={'pk': team.id}),
@@ -184,7 +183,6 @@ class TestScheduleMeetingValidation:
     def test_schedule_meeting_rejects_inactive_member_attendees(
         self, api_client, team, leader, member,
     ):
-        """TM-2: an inactive member cannot be an attendee."""
         TeamMembership.objects.create(
             team=team, user=member, role='MEMBER',
             is_active=False, left_at=timezone.now(),
@@ -198,7 +196,6 @@ class TestScheduleMeetingValidation:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_schedule_meeting_no_attendees_succeeds(self, api_client, team, leader):
-        """No attendees → no validation → 201."""
         api_client.force_authenticate(user=leader)
         response = api_client.post(
             reverse('team-schedule-meeting', kwargs={'pk': team.id}),
@@ -207,24 +204,9 @@ class TestScheduleMeetingValidation:
         )
         assert response.status_code == status.HTTP_201_CREATED
 
-    @pytest.mark.xfail(
-        reason=(
-            "Pre-existing TeamMeetingSerializer bug: 'attendee_ids' is "
-            "declared as a write_only field but the TeamMeeting model "
-            "lacks the attribute, so default .create() raises TypeError. "
-            "The TM-2 gate itself works (a 400 would mean the gate is "
-            "broken); full 201 path requires the serializer to override "
-            "create() and pop attendee_ids."
-        ),
-        strict=False,
-    )
     def test_schedule_meeting_accepts_member_attendees(
         self, api_client, team, leader, member,
     ):
-        """TM-2 gate: an active team member must be accepted.
-
-        Marked xfail because of the pre-existing serializer bug.
-        """
         TeamMembership.objects.create(
             team=team, user=member, role='MEMBER', is_active=True,
         )

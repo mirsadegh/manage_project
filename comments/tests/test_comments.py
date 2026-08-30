@@ -135,15 +135,17 @@ class TestCommentReplies:
         assert deep_reply.parent == reply
         assert deep_reply.get_thread_root() == parent
     
-    def test_get_comment_thread(self, authenticated_client, task):
+    def test_get_comment_thread(self, authenticated_client, task, user):
         """Test retrieving a comment thread"""
+        from projects.tests.factories import ProjectMemberFactory
+        ProjectMemberFactory(project=task.project, user=user, role='MEMBER')
         # Create threaded comments
         parent = ThreadedCommentFactory(content_object=task)
-        
+
         response = authenticated_client.get(
             reverse('comment-detail', kwargs={'pk': parent.id})
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         assert 'replies' in response.data
         assert len(response.data['replies']) >= 1
@@ -171,18 +173,20 @@ class TestCommentEditing:
         comment.refresh_from_db()
         assert comment.text == 'This is the edited comment'
         assert comment.is_edited
-    
-    def test_cannot_edit_others_comment(self, authenticated_client, task):
+
+    def test_cannot_edit_others_comment(self, authenticated_client, task, user):
         """Test user cannot edit someone else's comment"""
+        from projects.tests.factories import ProjectMemberFactory
+        ProjectMemberFactory(project=task.project, user=user, role='MEMBER')
         other_user = UserFactory()
         comment = TaskCommentFactory(content_object=task, author=other_user)
-        
+
         data = {'text': 'This should fail'}
         response = authenticated_client.patch(
-            reverse('comment-detail', kwargs={'pk': comment.id}), 
+            reverse('comment-detail', kwargs={'pk': comment.id}),
             data
         )
-        
+
         assert response.status_code == status.HTTP_403_FORBIDDEN
     
     def test_edit_history_tracked(self, authenticated_client, task, user):
@@ -304,14 +308,16 @@ class TestCommentReactions:
         from comments.models import CommentReaction
         assert not CommentReaction.objects.filter(id=reaction.id).exists()
     
-    def test_get_comment_reactions(self, authenticated_client, task):
+    def test_get_comment_reactions(self, authenticated_client, task, user):
         """Test getting reactions for a comment"""
+        from projects.tests.factories import ProjectMemberFactory
+        ProjectMemberFactory(project=task.project, user=user, role='MEMBER')
         comment = CommentWithReactionsFactory(content_object=task)
-        
+
         response = authenticated_client.get(
             reverse('comment-reactions', kwargs={'pk': comment.id})
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 2  # Should have at least 2 reactions
 
