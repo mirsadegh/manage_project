@@ -67,8 +67,20 @@ def clean_old_notifications():
 @shared_task
 def send_notification_async(recipient_id, notification_type, title, message, object_id=None, content_type_id=None):
     """
-    Create notification asynchronously.
-    Useful for bulk operations.
+    Create notification asynchronously. Useful for bulk operations.
+
+    SECURITY: This task accepts arbitrary recipient_id. It is SAFE only
+    because the Celery broker is on a private/internal transport and
+    tasks are not exposed via any HTTP endpoint. If you ever expose
+    task triggering via HTTP, add authorization checks to verify the
+    caller is allowed to notify the target recipient.
+
+    Currently called from:
+    - signals.py (server-side notification creation)
+    - utils.py helpers (project/team member notifications)
+
+    Do NOT expose this task directly via any HTTP endpoint without
+    adding recipient authorization.
     """
     try:
         user = CustomUser.objects.get(id=recipient_id)

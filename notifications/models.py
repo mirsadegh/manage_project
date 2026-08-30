@@ -67,12 +67,21 @@ class Notification(models.Model):
         return f"{self.notification_type} for {self.recipient.username}"
 
     def mark_as_read(self):
-        """Mark notification as read"""
+        """
+        Atomically mark this notification as read.
+
+        Uses queryset.update() to avoid race conditions with concurrent
+        mark_read calls. Only updates if not already read.
+        Returns True if the notification was newly marked as read.
+        """
         from django.utils import timezone
-        if not self.is_read:
+        updated = Notification.objects.filter(
+            pk=self.pk, is_read=False
+        ).update(is_read=True, read_at=timezone.now())
+        if updated:
             self.is_read = True
             self.read_at = timezone.now()
-            self.save()
+        return bool(updated)
 
 
 class NotificationPreference(models.Model):

@@ -291,8 +291,12 @@ REST_FRAMEWORK = {
         # PR-4 M-1: cap anonymous user self-registration to deter
         # mass-signup abuse.
         'registration': '5/hour',
-    }
-}
+        # PR-5 L-2: rate limit notification read endpoints to deter
+        # polling-based privacy inference (detecting new notifications
+        # in real time).
+        'notification_read': '100/min',
+     }
+ }
 
 # JWT Settings
 

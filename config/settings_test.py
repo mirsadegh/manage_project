@@ -63,7 +63,9 @@ REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
     # resolves; actual limits don't matter in tests.
     'registration': '1000/hour',
     'password_reset': '1000/hour',
-}
+    # PR-5 L-2: keep the test rate present so the throttle resolves.
+    'notification_read': '10000/hour',
+ }
 
 # Debug toolbar disabled
 DEBUG_TOOLBAR_CONFIG = {

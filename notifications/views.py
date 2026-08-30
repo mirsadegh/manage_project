@@ -2,9 +2,9 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils import timezone
 from django.db.models import Count
-
 from accounts.permissions import IsAdmin
 from .models import Notification, NotificationPreference, NotificationTemplate
 from .serializers import (
@@ -30,6 +30,7 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated, IsNotificationRecipient]
+    throttle_scope = 'notification_read'
 
     def get_queryset(self):
         qs = Notification.objects.filter(recipient=self.request.user)
