@@ -18,58 +18,49 @@ User = get_user_model()
 
 @pytest.mark.django_db
 class TestNotificationCreation:
-    """Test notification creation"""
-    
+    """Notification creation is server-side (signals/tasks).
+    The public API no longer exposes POST. These tests verify the
+    ORM-level creation contract that the signal/task code relies on.
+    """
+
     def test_create_notification(self, authenticated_client, user):
-        """Test creating a notification"""
-        sender = UserFactory()
-        
-        data = {
-            'recipient': user.id,
-            'sender': sender.id,
-            'notification_type': 'MENTION',
-            'title': 'Test Notification',
-            'message': 'This is a test notification'
-        }
-        response = authenticated_client.post(reverse('notification-list'), data)
-        
-        assert response.status_code == status.HTTP_201_CREATED
+        """Test creating a notification via ORM (server-side path)."""
         from notifications.models import Notification
+        sender = UserFactory()
+        notification = Notification.objects.create(
+            recipient=user,
+            sender=sender,
+            notification_type=Notification.NotificationType.MENTION,
+            title='Test Notification',
+            message='This is a test notification',
+        )
+        assert notification.id is not None
         assert Notification.objects.count() == 1
         assert Notification.objects.first().recipient == user
-    
+        # Public POST endpoint must be disabled
+        response = authenticated_client.post(reverse('notification-list'), {})
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+
     def test_notification_auto_timestamps(self, authenticated_client, user):
-        """Test notification timestamps are set automatically"""
-        sender = UserFactory()
-        
-        data = {
-            'recipient': user.id,
-            'sender': sender.id,
-            'notification_type': 'COMMENT',
-            'title': 'Test Notification',
-            'message': 'This is a test notification'
-        }
-        response = authenticated_client.post(reverse('notification-list'), data)
-        
-        assert response.status_code == status.HTTP_201_CREATED
+        """Test notification timestamps are set automatically via ORM."""
         from notifications.models import Notification
-        notification = Notification.objects.first()
+        sender = UserFactory()
+        notification = Notification.objects.create(
+            recipient=user,
+            sender=sender,
+            notification_type=Notification.NotificationType.COMMENT,
+            title='Test Notification',
+            message='This is a test notification',
+        )
         assert notification.created_at is not None
-        assert notification.read_at is None  # Should be None for unread notification
-    
+        assert notification.read_at is None  # unread by default
+
     def test_notification_validation(self, authenticated_client):
-        """Test notification validation"""
+        """POST endpoint is removed; verify 405 instead of validation errors."""
         user = UserFactory()
-        
-        data = {
-            'recipient': user.id,
-            # Missing required fields
-        }
+        data = {'recipient': user.id}
         response = authenticated_client.post(reverse('notification-list'), data)
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert 'notification_type' in response.data
-        assert 'title' in response.data
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
 
 @pytest.mark.django_db
@@ -183,34 +174,24 @@ class TestNotificationActions:
         assert unread_count == 0
     
     def test_delete_notification(self, authenticated_client):
-        """Test deleting a notification"""
+        """DELETE is no longer exposed; verify 405 (intentional lockdown)."""
         user = UserFactory()
         notification = NotificationFactory(recipient=user)
-        
         authenticated_client.force_authenticate(user=user)
-        
         response = authenticated_client.delete(
             reverse('notification-detail', kwargs={'pk': notification.id})
         )
-        
-        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+        # The notification row is still intact
         from notifications.models import Notification
-        assert not Notification.objects.filter(id=notification.id).exists()
+        assert Notification.objects.filter(id=notification.id).exists()
 
-
-@pytest.mark.django_db
-class TestNotificationPreferences:
-    """Test notification preferences"""
-    
     def test_get_preferences(self, authenticated_client):
         """Test getting user's notification preferences"""
         user = UserFactory()
         NotificationPreferenceFactory.create_batch(3, user=user)
-        
         authenticated_client.force_authenticate(user=user)
-        
         response = authenticated_client.get(reverse('notification-preference-list'))
-        
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 3
     
@@ -439,19 +420,16 @@ class TestNotificationSecurity:
         assert len(response.data['results']) == 0
     
     def test_notification_recipient_validation(self, authenticated_client):
-        """Test that notification recipient is validated"""
-        sender = UserFactory()
-        
-        data = {
-            'recipient': 99999,  # Non-existent user
-            'sender': sender.id,
-            'notification_type': 'MENTION',
-            'title': 'Test',
-            'message': 'Test message'
-        }
-        response = authenticated_client.post(reverse('notification-list'), data)
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        """POST is no longer exposed; verify 405 (security fix).
+
+        The original test verified that creating a notification with
+        a non-existent recipient returned 400. Since the public POST
+        endpoint was removed (N-1), the validation no longer applies
+        at the API layer; recipient validation now happens server-side
+        in signals/tasks. This test now documents the lockdown.
+        """
+        response = authenticated_client.post(reverse('notification-list'), {})
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
 
 @pytest.mark.django_db
