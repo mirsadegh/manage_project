@@ -13,6 +13,12 @@ class NotificationSerializer(serializers.ModelSerializer):
     message) are read-only. Notifications are created server-side by
     signals and tasks. Clients can only read and mark-as-read via
     dedicated endpoints.
+
+    SECURITY: content_type and object_id (GFK fields) are INTENTIONALLY
+    omitted from `fields`. Adding them would expose internal object
+    references and allow attackers to point recipients at arbitrary
+    internal objects. If you need to expose them, add explicit
+    validation and read-only enforcement.
     """
 
     class Meta:

@@ -189,7 +189,9 @@ class TestNotificationActions:
     def test_get_preferences(self, authenticated_client):
         """Test getting user's notification preferences"""
         user = UserFactory()
-        NotificationPreferenceFactory.create_batch(3, user=user)
+        # Use distinct notification_type values (M-1 added unique_together)
+        for n_type in ('MENTION', 'COMMENT', 'ASSIGNMENT'):
+            NotificationPreferenceFactory(user=user, notification_type=n_type)
         authenticated_client.force_authenticate(user=user)
         response = authenticated_client.get(reverse('notification-preference-list'))
         assert response.status_code == status.HTTP_200_OK

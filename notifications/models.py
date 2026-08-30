@@ -96,6 +96,12 @@ class NotificationPreference(models.Model):
 
     class Meta:
         ordering = ['notification_type']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'notification_type'],
+                name='notifications_pref_user_type_unique',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.username} - {self.notification_type}"

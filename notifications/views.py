@@ -5,12 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Count
 
+from accounts.permissions import IsAdmin
 from .models import Notification, NotificationPreference, NotificationTemplate
 from .serializers import (
     NotificationSerializer,
     NotificationPreferenceSerializer,
     NotificationTemplateSerializer,
 )
+from .permissions import IsNotificationRecipient
 
 
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -25,21 +27,15 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     - GET /notifications/ - List current user's notifications (filter: is_read, notification_type)
     - GET /notifications/<id>/ - Get a notification
     - POST /notifications/<id>/mark-read/ - Mark a notification as read
-    - POST /notifications/mark-all-read/ - Mark all notifications as read
-    - GET /notifications/unread-count/ - Count of unread notifications
-    - GET /notifications/statistics/ - Notification statistics
     """
-
     serializer_class = NotificationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsNotificationRecipient]
 
     def get_queryset(self):
         qs = Notification.objects.filter(recipient=self.request.user)
-
         is_read = self.request.query_params.get('is_read')
         if is_read is not None:
             qs = qs.filter(is_read=is_read.lower() == 'true')
-
         notification_type = self.request.query_params.get('notification_type')
         if notification_type:
             qs = qs.filter(notification_type=notification_type)
@@ -95,11 +91,11 @@ class NotificationPreferenceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return NotificationPreference.objects.filter(user=self.request.user)
-
-
 class NotificationTemplateViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for listing notification templates."""
-
+    """
+    Internal notification templates.
+    Admin-only: templates are internal configuration, not user-facing.
+    """
     serializer_class = NotificationTemplateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdmin]
     queryset = NotificationTemplate.objects.all()
