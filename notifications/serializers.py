@@ -6,17 +6,23 @@ User = get_user_model()
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    """Serializer for user notifications."""
+    """
+    Notification serializer.
+
+    All content fields (recipient, sender, notification_type, title,
+    message) are read-only. Notifications are created server-side by
+    signals and tasks. Clients can only read and mark-as-read via
+    dedicated endpoints.
+    """
 
     class Meta:
         model = Notification
         fields = [
-            'id', 'recipient', 'sender', 'notification_type', 'title', 'message',
-            'is_read', 'is_email_sent', 'created_at', 'read_at', 'email_sent_at',
+            'id', 'recipient', 'sender', 'notification_type',
+            'title', 'message', 'is_read', 'is_email_sent',
+            'read_at', 'email_sent_at', 'created_at',
         ]
-        read_only_fields = [
-            'id', 'is_read', 'is_email_sent', 'created_at', 'read_at', 'email_sent_at',
-        ]
+        read_only_fields = fields  # ALL fields are read-only
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -13,17 +13,20 @@ from .serializers import (
 )
 
 
-class NotificationViewSet(viewsets.ModelViewSet):
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for user notifications.
+    Notification feed for the authenticated user.
+
+    Read-only: notifications are created server-side by signals and
+    tasks. Clients can list, retrieve, and mark-as-read, but cannot
+    create directly.
 
     Endpoints:
     - GET /notifications/ - List current user's notifications (filter: is_read, notification_type)
     - GET /notifications/<id>/ - Get a notification
-    - DELETE /notifications/<id>/ - Delete a notification
-    - GET /notifications/unread-count/ - Count of unread notifications
     - POST /notifications/<id>/mark-read/ - Mark a notification as read
     - POST /notifications/mark-all-read/ - Mark all notifications as read
+    - GET /notifications/unread-count/ - Count of unread notifications
     - GET /notifications/statistics/ - Notification statistics
     """
 
