@@ -406,6 +406,18 @@ TRUSTED_PROXY_CIDRS = [
     cidr.strip() for cidr in os.getenv('TRUSTED_PROXY_CIDRS', '').split(',') if cidr.strip()
 ]
 
+# PR-6: cookie-based JWT auth (preferred channel for WebSockets).
+# The actual cookie name constants live in `config.auth_cookies`. The
+# settings below control the production-only hardening. In development
+# (DEBUG=True) the cookies are non-Secure so the browser will send them
+# over plain HTTP on localhost. SameSite=Lax is always applied to
+# protect against CSRF on cross-site requests.
+AUTH_COOKIE_SECURE = os.getenv('AUTH_COOKIE_SECURE', str(not DEBUG)).lower() in ('1', 'true', 'yes')
+AUTH_COOKIE_SAMESITE = os.getenv('AUTH_COOKIE_SAMESITE', 'Lax')
+# Cookie path scope. Using "/" so the cookie is sent on /api/... and
+# /ws/... requests alike.
+AUTH_COOKIE_PATH = '/'
+
 # PR-3 Fix #3: per-user WebSocket connection cap. Enforced in NotificationConsumer
 # and ProjectConsumer connect(). The close code 4028 is used when exceeded.
 MAX_CONNECTIONS_PER_USER = int(os.getenv('MAX_CONNECTIONS_PER_USER', '5'))

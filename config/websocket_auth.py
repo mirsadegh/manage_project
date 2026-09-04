@@ -8,6 +8,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from accounts.models import CustomUser
 from urllib.parse import parse_qs
+from .auth_cookies import ACCESS_COOKIE, get_cookie
 import logging
 import time
 
@@ -205,31 +206,34 @@ class JWTAuthMiddleware(BaseMiddleware):
         return await super().__call__(scope, receive, send)
     
     def _extract_token(self, scope):
-        """Extract JWT token from query string or headers.
+        """Extract JWT token from the WebSocket upgrade request.
 
-        PR-3 Fix #4: query-string token extraction is DEPRECATED. It is
-        kept for backward compatibility (browser WebSocket clients that
-        cannot set custom headers), but emits a warning on every
-        connection. Clients should prefer the Authorization header.
+        Lookup order (PR-6):
+          1. HttpOnly `ws_access` cookie (preferred). The browser
+             attaches this automatically on the upgrade request when
+             the WS endpoint is same-origin as the frontend (which is
+             the dev-proxy setup and the recommended prod layout).
+          2. `Authorization: Bearer <token>` header. Useful for
+             server-to-server clients and tools.
+          3. `?token=<token>` query string. DEPRECATED — kept only
+             for backward compatibility with existing tests and
+             tools. Emits a warning on every connection so callers
+             notice.
 
         PR-3 Fix #14: the Sec-WebSocket-Protocol JWT method was REMOVED.
         Browsers echo the chosen subprotocol back to JS, which leaks
-        the JWT. Clients must use the Authorization header (or the
-        deprecated query string).
+        the JWT.
         """
         token = None
         source = None  # which method yielded the token
 
-        # Method 1: Query string parameter (DEPRECATED)
-        query_string = scope.get('query_string', b'').decode()
-        if query_string:
-            params = parse_qs(query_string)
-            token_list = params.get('token', [])
-            if token_list:
-                token = token_list[0]
-                source = 'query_string'
+        # Method 1: HttpOnly cookie (PR-6, preferred).
+        cookie_value = get_cookie(scope.get('headers', []), ACCESS_COOKIE)
+        if cookie_value:
+            token = cookie_value
+            source = 'cookie'
 
-        # Method 2: Authorization header
+        # Method 2: Authorization header.
         if not token:
             headers = dict(scope.get('headers', []))
             auth_header = headers.get(b'authorization', b'').decode()
@@ -240,14 +244,20 @@ class JWTAuthMiddleware(BaseMiddleware):
                 token = auth_header[7:]
                 source = 'authorization_header'
 
-        # Method 3 (removed in PR-3 Fix #14): no longer extract JWT from
-        # Sec-WebSocket-Protocol — the browser echoes the chosen
-        # subprotocol back to JS, which leaks the token.
+        # Method 3: Query string parameter (DEPRECATED, kept for tests/tools).
+        if not token:
+            query_string = scope.get('query_string', b'').decode()
+            if query_string:
+                params = parse_qs(query_string)
+                token_list = params.get('token', [])
+                if token_list:
+                    token = token_list[0]
+                    source = 'query_string'
 
         if source == 'query_string':
             logger.warning(
                 'WebSocket auth via query-string ?token= is DEPRECATED. '
-                'Use Authorization: Bearer <token> header instead.'
+                'Use the HttpOnly cookie (preferred) or Authorization: Bearer header.'
             )
 
         if token:

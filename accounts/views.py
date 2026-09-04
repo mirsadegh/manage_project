@@ -4,7 +4,7 @@ import logging
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from django.contrib.auth import get_user_model
@@ -23,6 +23,7 @@ from .serializers import (
 from .permissions import IsAdminOrManager, IsAdmin
 from config.pagination import StandardResultsSetPagination
 from config.throttling import LoginRateThrottle
+from config.auth_cookies import set_auth_cookies, clear_auth_cookies
 User = get_user_model()
 logger = logging.getLogger('accounts')
 
@@ -63,8 +64,14 @@ class RegisterView(generics.CreateAPIView):
         # Documented as an accepted risk; revisit if user feedback
         # changes.
         refresh = RefreshToken.for_user(user)
+        access = str(refresh.access_token)
+        refresh_str = str(refresh)
 
-        return Response({
+        # PR-6: also set the tokens as HttpOnly cookies so the
+        # WebSocket upgrade can authenticate without ?token=. The JSON
+        # body is preserved for backward compatibility with existing
+        # tools and tests.
+        response = Response({
             'message': 'Registration successful',
             'user': {
                 'id': user.id,
@@ -72,29 +79,51 @@ class RegisterView(generics.CreateAPIView):
                 'email': user.email,
             },
             'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
+                'refresh': refresh_str,
+                'access': access,
             }
         }, status=status.HTTP_201_CREATED)
+        set_auth_cookies(response, access=access, refresh=refresh_str)
+        return response
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Custom login view with rate limiting.
     The throttle is applied at the view level to ensure it works correctly.
+
+    PR-6: on a successful login, the access and refresh tokens are also
+    set as HttpOnly cookies so the WebSocket upgrade can authenticate
+    without ?token=. The JSON body still contains the tokens for
+    backward compatibility with existing tools.
     """
     serializer_class = CustomTokenObtainPairSerializer
     throttle_classes = [LoginRateThrottle]
 
     def post(self, request, *args, **kwargs):
         # Throttling is automatically applied by DRF before this method runs
-        return super().post(request, *args, **kwargs)
+        response = super().post(request, *args, **kwargs)
+        # Only set cookies on a successful login. A 401/400 response has
+        # no 'access' field, and setting a cookie there would confuse
+        # any tooling that probes for Set-Cookie on errors.
+        if response.status_code == status.HTTP_200_OK and 'access' in response.data:
+            set_auth_cookies(
+                response,
+                access=response.data.get('access'),
+                refresh=response.data.get('refresh'),
+            )
+        return response
 
 
 class LogoutView(APIView):
     """
     Logout endpoint that blacklists the refresh token.
     Supports both single token logout and logout from all devices.
+
+    PR-6: also clears the auth cookies so the browser drops them.
+    This complements the existing JWT blacklisting; the
+    force_disconnect signal (PR-3 Fix #1) takes care of any open
+    WebSocket connections.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -108,13 +137,17 @@ class LogoutView(APIView):
         if logout_all:
             # PR-4: use the shared helper instead of inlining the loop.
             _blacklist_user_tokens(request.user)
-            return Response({'message': 'Successfully logged out from all devices'})
+            response = Response({'message': 'Successfully logged out from all devices'})
+            clear_auth_cookies(response)
+            return response
 
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
-                return Response({'message': 'Successfully logged out'})
+                response = Response({'message': 'Successfully logged out'})
+                clear_auth_cookies(response)
+                return response
             except TokenError:
                 return Response(
                     {'error': 'Invalid or expired token'},
@@ -358,3 +391,61 @@ class UserViewSet(viewsets.ModelViewSet):
         user.is_active = True
         user.save()
         return Response({'message': f'User {user.username} activated successfully'})
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    """
+    Token refresh endpoint that re-issues HttpOnly cookies.
+
+    PR-6: when the request arrives with the `ws_refresh` cookie (set
+    on login), we read the refresh token from the cookie and use it to
+    rotate. We then set the new access (and rotated refresh) cookies
+    on the response. The JSON body still includes the new tokens so
+    client code that reads the body keeps working.
+
+    Clients that still send the refresh token in the JSON body also
+    continue to work — we accept either channel.
+    """
+    # Allow this view to be reached without an Authorization header
+    # (the default TokenRefreshView is permission_classes=()).
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        # If the JSON body has no `refresh`, fall back to the cookie.
+        # We do this by wrapping the request in a fresh Request whose
+        # body contains the cookie-derived refresh token. This avoids
+        # mutating the cached `_full_data` on the original request,
+        # which Django REST Framework may have already parsed.
+        from rest_framework.request import Request
+        from rest_framework.parsers import JSONParser
+
+        body_refresh = None
+        try:
+            body_refresh = request.data.get('refresh') if hasattr(request.data, 'get') else None
+        except Exception:
+            body_refresh = None
+
+        if not body_refresh:
+            cookie_refresh = request.COOKIES.get('ws_refresh')
+            if cookie_refresh:
+                # Rebuild the request body with the cookie value.
+                # TokenRefreshView's serializer reads `refresh` from
+                # validated input; this gives it the cookie-derived
+                # value while leaving the original request untouched.
+                rebuilt = Request(
+                    request._request,
+                    parsers=[JSONParser()],
+                )
+                rebuilt._data = {'refresh': cookie_refresh}
+                rebuilt._files = {}
+                rebuilt._full_data = {'refresh': cookie_refresh}
+                request = rebuilt
+
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK and 'access' in response.data:
+            set_auth_cookies(
+                response,
+                access=response.data.get('access'),
+                refresh=response.data.get('refresh'),
+            )
+        return response
