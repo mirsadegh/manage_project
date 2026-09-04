@@ -11,7 +11,7 @@ from .models import Attachment
 from .serializers import AttachmentSerializer, AttachmentUploadSerializer
 from .permissions import CanAccessAttachment
 import mimetypes
-
+from django.db import models
 
 class AttachmentViewSet(viewsets.ModelViewSet):
     """
