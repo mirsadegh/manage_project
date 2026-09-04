@@ -159,6 +159,7 @@ class ProjectConsumer(BaseConsumer):
                 self.group_name,
                 self.channel_name
             )
+        
         # PR-3 Fix #1: leave the control group too.
         if hasattr(self, 'control_group') and self.control_group:
             await self.channel_layer.group_discard(
@@ -166,18 +167,23 @@ class ProjectConsumer(BaseConsumer):
                 self.channel_name
             )
 
-        if hasattr(self, 'user') and self.user and self.user.is_authenticated:
-            await self._remove_online_user()
-            # PR-3 Fix #3: decrement per-user cap counter.
-            await self._release_user_connection_cap()
         # PR-3 Fix #10: stop the idle-timeout watchdog.
         self._ws_cancel_idle_watchdog()
 
         if hasattr(self, 'user') and self.user and self.user.is_authenticated:
-            duration = (timezone.now() - self.connected_at).seconds if self.connected_at else 0
+            await self._remove_online_user()
+            # PR-3 Fix #3: decrement per-user cap counter.
+            await self._release_user_connection_cap()
+
+            connected_at = getattr(self, 'connected_at', None)
+            duration = (timezone.now() - connected_at).seconds if connected_at else 0
+            
             logger.info(
-                f"User {self.user.username} left project {self.project_slug} "
-                f"(code: {close_code}, duration: {duration}s)"
+                "User %s left project %s (code: %s, duration: %ss)",
+                self.user.username,
+                self.project_slug,
+                close_code,
+                duration,
             )
 
     async def force_disconnect(self, event):

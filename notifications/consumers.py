@@ -205,10 +205,6 @@ class NotificationConsumer(BaseConsumer):
                 self.channel_name
             )
 
-        if hasattr(self, 'user') and self.user and self.user.is_authenticated:
-            await self._track_connection(connected=False)
-            # PR-3 Fix #3: decrement per-user cap counter.
-            await self._release_user_connection_cap()
         # PR-3 Fix #10: stop the idle-timeout watchdog.
         self._ws_cancel_idle_watchdog()
 
@@ -216,10 +212,15 @@ class NotificationConsumer(BaseConsumer):
             await self._track_connection(connected=False)
             # PR-3 Fix #3: decrement per-user cap counter.
             await self._release_user_connection_cap()
-            duration = (timezone.now() - self.connected_at).seconds if self.connected_at else 0
+
+            connected_at = getattr(self, 'connected_at', None)
+            duration = (timezone.now() - connected_at).seconds if connected_at else 0
+
             logger.info(
-                f"User {self.user.username} disconnected from notifications "
-                f"(code: {close_code}, duration: {duration}s)"
+                "User %s disconnected from notifications (code: %s, duration: %ss)",
+                self.user.username,
+                close_code,
+                duration,
             )
 
     async def force_disconnect(self, event):
