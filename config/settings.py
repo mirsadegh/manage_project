@@ -555,8 +555,3 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-
-
-# https://claude.ai/share/7f320c96-6866-4e47-9ddd-601cf59cd2b3     //i can share pro
-
-# https://claude.ai/share/7ac34912-a571-4b91-8153-70a9bf80bb0cc
