@@ -110,7 +110,7 @@ class CustomUser(AbstractUser):
         ordering = ['-date_joined']
         constraints = [
             models.CheckConstraint(
-                check=models.Q(hourly_rate__isnull=True) | models.Q(hourly_rate__gte=0),
+                condition=models.Q(hourly_rate__isnull=True) | models.Q(hourly_rate__gte=0),
                 name='user_hourly_rate_positive'
             ),
         ]

@@ -98,17 +98,17 @@ class Project(models.Model):
         constraints = [
             # Ensure start_date is before or equal to due_date
             models.CheckConstraint(
-                check=Q(start_date__isnull=True) | Q(due_date__isnull=True) | Q(start_date__lte=F('due_date')),
+                condition=Q(start_date__isnull=True) | Q(due_date__isnull=True) | Q(start_date__lte=F('due_date')),
                 name='project_start_date_before_due_date'
             ),
             # Ensure progress is between 0 and 100
             models.CheckConstraint(
-                check=Q(progress__gte=0) & Q(progress__lte=100),
+                condition=Q(progress__gte=0) & Q(progress__lte=100),
                 name='project_progress_percentage_valid'
             ),
             # Ensure budget is positive if set
             models.CheckConstraint(
-                check=Q(budget__isnull=True) | Q(budget__gte=0),
+                condition=Q(budget__isnull=True) | Q(budget__gte=0),
                 name='project_budget_positive'
             ),
         ]

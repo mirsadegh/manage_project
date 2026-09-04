@@ -160,22 +160,22 @@ class Task(models.Model):
         constraints = [
             # Ensure start_date is before or equal to due_date
             models.CheckConstraint(
-                check=Q(start_date__isnull=True) | Q(due_date__isnull=True) | Q(start_date__lte=F('due_date')),
+                condition=Q(start_date__isnull=True) | Q(due_date__isnull=True) | Q(start_date__lte=F('due_date')),
                 name='task_start_date_before_due_date'
             ),
             # Ensure estimated_hours is positive
             models.CheckConstraint(
-                check=Q(estimated_hours__isnull=True) | Q(estimated_hours__gte=0),
+                condition=Q(estimated_hours__isnull=True) | Q(estimated_hours__gte=0),
                 name='task_estimated_hours_positive'
             ),
             # Ensure actual_hours is positive
             models.CheckConstraint(
-                check=Q(actual_hours__isnull=True) | Q(actual_hours__gte=0),
+                condition=Q(actual_hours__isnull=True) | Q(actual_hours__gte=0),
                 name='task_actual_hours_positive'
             ),
             # Prevent task from being its own parent
             models.CheckConstraint(
-                check=~Q(parent_task=F('id')),
+                condition=~Q(parent_task=F('id')),
                 name='task_cannot_be_own_parent'
             ),
         ]
@@ -306,7 +306,7 @@ class TaskDependency(models.Model):
         constraints = [
             # Prevent task from depending on itself
             models.CheckConstraint(
-                check=~Q(task=F('depends_on')),
+                condition=~Q(task=F('depends_on')),
                 name='task_cannot_depend_on_itself'
             ),
         ]
