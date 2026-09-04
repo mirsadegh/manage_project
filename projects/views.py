@@ -24,7 +24,7 @@ from .permissions import (
 from config.pagination import ProjectPagination
 from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
-from config.mixins import ProjectAccessMixin
+
 from config.throttling import ProjectCreationThrottle
 
 from config.decorators import (
@@ -318,24 +318,37 @@ class ProjectViewSet(viewsets.ModelViewSet):
             'message': f'Project "{project_name}" permanently deleted'
         })    
     
-    
     @action(detail=True, methods=['get'])
     def team_info(self, request, slug=None):
         """Get team information - requires project access"""
         project = self.get_object()
         
-        # Check project access
-        try:
-            self.check_project_access(project, request.user)
-        except PermissionDenied as e:
+        # Check project access (consistent with other views)
+        has_access = (
+            request.user.is_superuser or
+            request.user.role == 'ADMIN' or
+            project.owner == request.user or
+            project.manager == request.user or
+            project.members.filter(user=request.user).exists() or
+            project.is_public
+        )
+        
+        if not has_access:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_403_FORBIDDEN 
-                
-                )
+                {'error': "You don't have access to this project."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         # Get user's role in project
-        user_role = self.get_user_role_in_project(project, request.user)
+        if request.user.is_superuser or request.user.role == 'ADMIN':
+            user_role = 'ADMIN'
+        elif project.owner == request.user:
+            user_role = 'OWNER'
+        elif project.manager == request.user:
+            user_role = 'MANAGER'
+        else:
+            membership = project.members.filter(user=request.user).first()
+            user_role = membership.role if membership else 'VIEWER'
         
         # Get team members
         members = project.members.all()
@@ -344,9 +357,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
             'your_role': user_role,
             'total_members': members.count(),
             'members': ProjectMemberSerializer(members, many=True).data
-        }) 
-        
-        
+        })
+    
+    
     def get_throttles(self):
         """
         Apply different throttles based on action.
