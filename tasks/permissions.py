@@ -7,34 +7,50 @@ class CanManageTask(permissions.BasePermission):
     Permission برای ایجاد و ویرایش تسک
     فقط اعضای پروژه می‌توانند تسک بسازند
     """
-    
+
     def has_permission(self, request, view):
+        # Admins and superusers bypass project-membership checks for the
+        # create action. Without this, an ADMIN (role='ADMIN') or
+        # is_superuser who is NOT a member of the project would get 403
+        # on POST /api/tasks/tasks/, which contradicts the documented
+        # "admins have full access" invariant. The same bypass is also
+        # applied by has_object_permission below for update/partial_update.
+        user = getattr(request, 'user', None)
+        if (
+            view.action == 'create'
+            and user is not None
+            and getattr(user, 'is_authenticated', False)
+            and (getattr(user, 'is_superuser', False)
+                 or getattr(user, 'role', None) == 'ADMIN')
+        ):
+            return True
+
         # برای action های create باید عضو پروژه باشد
         if view.action == 'create':
             project_id = request.data.get('project')
             if not project_id:
                 return False
-            
+
             try:
                 from projects.models import Project, ProjectMember
                 project = Project.objects.get(id=project_id)
-                
+
                 # چک کنیم کاربر عضو فعال پروژه است
                 is_member = (
                     project.owner == request.user or
                     project.manager == request.user or
                     ProjectMember.objects.filter(
-                        project=project, 
+                        project=project,
                         user=request.user,
                         is_active=True
                     ).exists()
                 )
-                
+
                 return is_member
-                
+
             except Project.DoesNotExist:
                 return False
-        
+
         return True  # برای سایر actionها در has_object_permission چک می‌شود
     
     def has_object_permission(self, request, view, obj):
@@ -136,10 +152,24 @@ class IsProjectMember(permissions.BasePermission):
     کاربر باید عضو پروژه باشد
     """
     def has_permission(self, request, view):
+        # Admins and superusers bypass project-membership checks so an
+        # ADMIN who is not a member of the project can still create
+        # tasks/lists against it. This mirrors the same bypass applied
+        # in projects/permissions.py:IsProjectMember and avoids a 403
+        # on POST endpoints for global admins.
+        user = getattr(request, 'user', None)
+        if (
+            user is not None
+            and getattr(user, 'is_authenticated', False)
+            and (getattr(user, 'is_superuser', False)
+                 or getattr(user, 'role', None) == 'ADMIN')
+        ):
+            return True
+
         project_id = request.data.get('project')
         if not project_id:
             return False
-        
+
         from projects.models import Project
         try:
             project = Project.objects.get(id=project_id)
@@ -148,7 +178,16 @@ class IsProjectMember(permissions.BasePermission):
             return False
 
     def has_object_permission(self, request, view, obj):
-        return obj.project.members.filter(id=request.user.id).exists()    
+        # Same admin/superuser bypass for object-level checks.
+        user = getattr(request, 'user', None)
+        if (
+            user is not None
+            and getattr(user, 'is_authenticated', False)
+            and (getattr(user, 'is_superuser', False)
+                 or getattr(user, 'role', None) == 'ADMIN')
+        ):
+            return True
+        return obj.project.members.filter(id=request.user.id).exists()
     
     
     
