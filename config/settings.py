@@ -258,7 +258,12 @@ CORS_ALLOW_CREDENTIALS = True
 # REST Framework Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # PR-6: CookieJWTAuthentication reads the `ws_access` HttpOnly
+        # cookie (the browser path) AND the Authorization header
+        # (backwards compat for API clients/tools). It also enforces
+        # the SimpleJWT blacklist, so revoked tokens stop working on
+        # both HTTP and WebSocket.
+        'config.auth_jwt.CookieJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',

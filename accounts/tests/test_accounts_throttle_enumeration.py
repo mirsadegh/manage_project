@@ -26,7 +26,22 @@ User = get_user_model()
 
 @pytest.fixture
 def anon_client():
-    return APIClient()
+    # CookieJWTAuthentication (PR-6) reads the `ws_access` HttpOnly cookie.
+    # The test client persists cookies across calls by default, so the 2nd
+    # registration request would arrive carrying the cookies set by the 1st
+    # request's response and be (incorrectly) authenticated as user #1 —
+    # giving each request a different throttle bucket and breaking the
+    # `5/hour` rate assertion. We don't actually want to share state
+    # between simulated users; clear cookies before each call to mirror
+    # what a fresh browser would send.
+    client = APIClient()
+    client.credentials()  # ensure no Authorization header
+    return client
+
+
+def _clear_cookies(client):
+    """Reset cookies on the test client. Mirrors a fresh browser session."""
+    client.cookies.clear()
 
 
 @pytest.fixture
@@ -90,6 +105,12 @@ def test_registration_throttled_after_5_requests(anon_client):
                 'first_name': 'Rate',
                 'last_name': f'User{i}',
             }
+            # PR-6: clear any cookies set by the previous request so
+            # CookieJWTAuthentication doesn't authenticate this one as
+            # the previously-registered user (which would put each
+            # request in its own throttle bucket and defeat the
+            # `5/hour` rate assertion).
+            _clear_cookies(anon_client)
             response = anon_client.post(url, data, format='json')
             assert response.status_code == status.HTTP_201_CREATED, (
                 f'Request {i+1} expected 201, got {response.status_code}: {response.content}'
@@ -104,6 +125,10 @@ def test_registration_throttled_after_5_requests(anon_client):
             'first_name': 'Rate',
             'last_name': 'User99',
         }
+        # PR-6: same reason — clear cookies so the 6th request arrives
+        # anonymous (matching the throttle's intended bucket for an
+        # unauthenticated registration).
+        _clear_cookies(anon_client)
         response = anon_client.post(url, sixth, format='json')
         assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS, (
             f'6th request expected 429, got {response.status_code}: {response.content}'
@@ -123,11 +148,16 @@ def test_password_reset_throttled_after_5_requests(anon_client):
         payload = {'email': 'someone@example.com'}
 
         for i in range(5):
+            # PR-6: clear cookies so CookieJWTAuthentication doesn't
+            # authenticate this request as someone previously registered
+            # in the test session.
+            _clear_cookies(anon_client)
             response = anon_client.post(url, payload, format='json')
             assert response.status_code != status.HTTP_429_TOO_MANY_REQUESTS, (
                 f'Request {i+1} unexpectedly throttled: {response.status_code}'
             )
 
+        _clear_cookies(anon_client)
         response = anon_client.post(url, payload, format='json')
         assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS, (
             f'6th request expected 429, got {response.status_code}'
@@ -156,9 +186,15 @@ def test_throttle_scopes_are_independent(anon_client):
                 'first_name': 'Ind',
                 'last_name': f'Reg{i}',
             }
+            # PR-6: clear cookies so each registration request is
+            # anonymous (otherwise the 2nd request would be
+            # authenticated as the user from the 1st response and use
+            # a different throttle bucket).
+            _clear_cookies(anon_client)
             r = anon_client.post(reg_url, data, format='json')
             assert r.status_code != status.HTTP_429_TOO_MANY_REQUESTS
         # 3rd registration is throttled.
+        _clear_cookies(anon_client)
         r = anon_client.post(reg_url, {
             'username': 'ind_reg_99', 'email': 'ind_reg_99@example.com',
             'password': 'Test123!@#', 'password_confirm': 'Test123!@#',
@@ -168,6 +204,7 @@ def test_throttle_scopes_are_independent(anon_client):
 
         # Password-reset must still work — independent scope.
         for i in range(2):
+            _clear_cookies(anon_client)
             r = anon_client.post(reset_url, {'email': 'someone@example.com'}, format='json')
             assert r.status_code != status.HTTP_429_TOO_MANY_REQUESTS, (
                 f'reset {i+1} was throttled by registration scope'
