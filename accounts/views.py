@@ -11,6 +11,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import CustomUser
@@ -43,6 +45,7 @@ def _blacklist_user_tokens(user):
             pass
 
 
+@method_decorator(ensure_csrf_cookie, name='create')
 class RegisterView(generics.CreateAPIView):
     """User registration endpoint."""
     queryset = User.objects.all()
@@ -87,6 +90,7 @@ class RegisterView(generics.CreateAPIView):
         return response
 
 
+@method_decorator(ensure_csrf_cookie, name='post')
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Custom login view with rate limiting.
@@ -393,6 +397,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({'message': f'User {user.username} activated successfully'})
 
 
+@method_decorator(ensure_csrf_cookie, name='post')
 class CookieTokenRefreshView(TokenRefreshView):
     """
     Token refresh endpoint that re-issues HttpOnly cookies.
