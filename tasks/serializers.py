@@ -5,10 +5,9 @@ from comments.serializers import CommentSerializer
 from files.serializers import AttachmentSerializer
 
 
-
 class TaskLabelSerializer(serializers.ModelSerializer):
     """Task label serializer"""
-    
+
     class Meta:
         model = TaskLabel
         fields = [
@@ -17,28 +16,13 @@ class TaskLabelSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
 
 
-class TaskListSerializer(serializers.ModelSerializer):
-    """Task list serializer"""
-    
-    task_count = serializers.IntegerField(read_only=True, default=0)
-    
-    
-    class Meta:
-        model = TaskList
-        fields = ['id', 'project', 'name', 'description', 'created_by', 'is_active',
-                  'order', 'position', 'task_count', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
-        
-    
-
-
 class TaskSerializer(serializers.ModelSerializer):
     """Task serializer"""
-    
+
     assignee = UserSerializer(read_only=True)
     assignee_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     created_by = UserSerializer(read_only=True)
-    labels = TaskLabelSerializer(source='label_assignments',many=True, read_only=True)
+    labels = TaskLabelSerializer(source='label_assignments', many=True, read_only=True)
     depends_on = serializers.PrimaryKeyRelatedField(
         queryset=Task.objects.all(),
         many=True,
@@ -46,9 +30,9 @@ class TaskSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True,
     )
-    
+
     is_overdue = serializers.ReadOnlyField()
-    
+
     class Meta:
         model = Task
         fields = [
@@ -70,6 +54,18 @@ class TaskSerializer(serializers.ModelSerializer):
             })
         return attrs
 
+
+class TaskListSerializer(serializers.ModelSerializer):
+    """Task list serializer"""
+
+    tasks = TaskSerializer(source='tasks.all', many=True, read_only=True)
+    task_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = TaskList
+        fields = ['id', 'project', 'name', 'description', 'created_by', 'is_active',
+                  'order', 'position', 'tasks', 'task_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
 
 
 class TaskDetailSerializer(TaskSerializer):

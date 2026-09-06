@@ -49,7 +49,7 @@ class TaskListViewSet(viewsets.ModelViewSet):
                 Q(project__members__user=user, project__members__is_active=True) |
                 Q(created_by=user)
             ).distinct()
-        return base.annotate(task_count=Count('tasks'))
+        return base.prefetch_related('tasks').annotate(task_count=Count('tasks'))
 
     def perform_create(self, serializer):
         from projects.models import ProjectMember
