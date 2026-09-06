@@ -26,11 +26,17 @@ class ProjectSerializer(serializers.ModelSerializer):
     is_overdue = serializers.ReadOnlyField()
     total_tasks = serializers.ReadOnlyField()
     completed_tasks = serializers.ReadOnlyField()
-    
-    
+    progress = serializers.SerializerMethodField()
     comment_count = serializers.ReadOnlyField()
     attachment_count = serializers.ReadOnlyField()
-    
+
+    def get_progress(self, obj):
+        total = obj.total_tasks  # calls the @property
+        if total == 0:
+            return 0
+        completed = obj.completed_tasks  # calls the @property
+        return int((completed / total) * 100)
+
     class Meta:
         model = Project
         fields = [
