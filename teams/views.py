@@ -46,7 +46,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.all()
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['owner']
+    filterset_fields = []  # Team has no owner field; membership is via TeamMembership
     search_fields = ['name', 'description']
     ordering_fields = ['created_at', 'name', 'member_count']
     ordering = ['-created_at']
@@ -79,26 +79,26 @@ class TeamViewSet(viewsets.ModelViewSet):
     def add_member(self, request, pk=None):
         """➕ Add a member to the team"""
         team = self.get_object()
-        
+
         # 🔐 Check if user is team leader
         if not team.is_leader(request.user):
             return Response(
                 {'error': '❌ Only team leaders can add members'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # 📊 Check if team is full
         if team.is_full:
             return Response(
                 {'error': '⚠️ Team has reached maximum capacity'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         serializer = TeamMembershipSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         user_id = serializer.validated_data['user_id']
-        
+
         # ✅ Check if user is already a member
         if TeamMembership.objects.filter(
             team=team,
@@ -134,7 +134,69 @@ class TeamViewSet(viewsets.ModelViewSet):
             TeamMembershipSerializer(membership).data,
             status=status.HTTP_201_CREATED
         )
-    
+
+    @action(detail=True, methods=['post'])
+    def invite_member(self, request, pk=None):
+        """📨 Add a member to the team by email or username (single endpoint)."""
+        from django.db.models import Q
+
+        team = self.get_object()
+
+        if not team.is_leader(request.user):
+            return Response(
+                {'detail': 'شما اجازه افزودن عضو را ندارید'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if team.is_full:
+            return Response(
+                {'detail': 'تیم به حداکثر ظرفیت رسیده است'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        username_or_email = request.data.get('username_or_email') or request.data.get('email')
+        role = request.data.get('role', 'MEMBER')
+
+        if not username_or_email:
+            return Response(
+                {'detail': 'ایمیل یا نام کاربری الزامی است'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        User = __import__('django.contrib.auth', fromlist=['get_user_model']).get_user_model()
+        user = User.objects.filter(
+            Q(username=username_or_email) | Q(email=username_or_email)
+        ).first()
+
+        if not user:
+            return Response(
+                {'detail': 'کاربر یافت نشد'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        existing = TeamMembership.objects.filter(team=team, user=user, is_active=True).exists()
+        if existing:
+            return Response(
+                {'detail': 'این کاربر قبلاً عضو تیم است'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        membership = team.add_member(user=user, role=role, added_by=request.user)
+
+        from notifications.models import Notification
+        Notification.objects.create(
+            recipient=user,
+            notification_type='INVITED',
+            title='✅ Added to Team',
+            message=f'{request.user.get_full_name()} added you to team "{team.name}"',
+            content_object=team
+        )
+
+        return Response(
+            TeamMembershipSerializer(membership).data,
+            status=status.HTTP_201_CREATED
+        )
+
     @action(detail=True, methods=['delete'], url_path='remove_member/(?P<membership_id>[^/.]+)')
     def remove_member(self, request, pk=None, membership_id=None):
         """➖ Remove a member from the team"""
