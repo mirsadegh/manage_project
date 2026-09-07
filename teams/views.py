@@ -51,6 +51,14 @@ class TeamViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'name', 'member_count']
     ordering = ['-created_at']
 
+    def can_manage_team(self, team, user):
+        """Check if user can manage (add/remove members) this team."""
+        if user.is_superuser or getattr(user, 'is_staff', False):
+            return True
+        if getattr(user, 'role', None) == 'ADMIN':
+            return True
+        return team.is_leader(user)
+
     def get_serializer_class(self):
         if self.action == 'create':
             return TeamCreateSerializer
@@ -80,10 +88,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         """➕ Add a member to the team"""
         team = self.get_object()
 
-        # 🔐 Check if user is team leader
-        if not team.is_leader(request.user):
+        if not self.can_manage_team(team, request.user):
             return Response(
-                {'error': '❌ Only team leaders can add members'},
+                {'detail': 'شما اجازه افزودن عضو را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -142,7 +149,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         team = self.get_object()
 
-        if not team.is_leader(request.user):
+        if not self.can_manage_team(team, request.user):
             return Response(
                 {'detail': 'شما اجازه افزودن عضو را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
@@ -201,11 +208,10 @@ class TeamViewSet(viewsets.ModelViewSet):
     def remove_member(self, request, pk=None, membership_id=None):
         """➖ Remove a member from the team"""
         team = self.get_object()
-        
-        # 🔐 Check permissions
-        if not team.is_leader(request.user):
+
+        if not self.can_manage_team(team, request.user):
             return Response(
-                {'error': '❌ Only team leaders can remove members'},
+                {'detail': 'شما اجازه حذف عضو را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -244,13 +250,13 @@ class TeamViewSet(viewsets.ModelViewSet):
     def invite(self, request, pk=None):
         """📨 Send invitation to join team"""
         team = self.get_object()
-        
-        # 🔐 Check permissions
-        if not team.is_leader(request.user):
+
+        if not self.can_manage_team(team, request.user):
             return Response(
-                {'error': '❌ Only team leaders can send invitations'},
+                {'detail': 'شما اجازه ارسال دعوت‌نامه را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
             )
+            
         
         data = request.data.copy()
         data['team_id'] = team.id
@@ -354,11 +360,10 @@ class TeamViewSet(viewsets.ModelViewSet):
     def assign_project(self, request, pk=None):
         """🎯 Assign project to team"""
         team = self.get_object()
-        
-        # 🔐 Check permissions
-        if not team.is_leader(request.user):
+
+        if not self.can_manage_team(team, request.user):
             return Response(
-                {'error': '❌ Only team leaders can assign projects'},
+                {'detail': 'شما اجازه تخصیص پروژه را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -448,11 +453,10 @@ class TeamViewSet(viewsets.ModelViewSet):
     def schedule_meeting(self, request, pk=None):
         """📅 Schedule a team meeting"""
         team = self.get_object()
-        
-        # 🔐 Check permissions
-        if not team.is_leader(request.user):
+
+        if not self.can_manage_team(team, request.user):
             return Response(
-                {'error': '❌ Only team leaders can schedule meetings'},
+                {'detail': 'شما اجازه زمان‌بندی جلسه را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -523,13 +527,13 @@ class TeamViewSet(viewsets.ModelViewSet):
     def create_goal(self, request, pk=None):
         """🎯 Create a team goal"""
         team = self.get_object()
-        
-        # 🔐 Check permissions
-        if not team.is_leader(request.user):
+
+        if not self.can_manage_team(team, request.user):
             return Response(
-                {'error': '❌ Only team leaders can create goals'},
+                {'detail': 'شما اجازه ایجاد هدف را ندارید'},
                 status=status.HTTP_403_FORBIDDEN
             )
+            
         
         serializer = TeamGoalSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
