@@ -1,4 +1,5 @@
-from rest_framework  import serializers
+from rest_framework import serializers
+from django.core.validators import MaxLengthValidator
 from .models import Task, TaskLabel, TaskLabelAssignment, TaskDependency, TaskList
 from accounts.serializers import UserSerializer
 from comments.serializers import CommentSerializer
@@ -30,7 +31,7 @@ class TaskSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True,
     )
-
+    title = serializers.CharField(max_length=300, validators=[MaxLengthValidator(300)])
     is_overdue = serializers.ReadOnlyField()
 
     class Meta:
@@ -60,6 +61,7 @@ class TaskListSerializer(serializers.ModelSerializer):
 
     tasks = TaskSerializer(source='tasks.all', many=True, read_only=True)
     task_count = serializers.IntegerField(read_only=True, default=0)
+    name = serializers.CharField(max_length=100, validators=[MaxLengthValidator(100)])
 
     class Meta:
         model = TaskList

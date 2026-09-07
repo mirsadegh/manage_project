@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.core.validators import MaxLengthValidator
 from .models import Project, ProjectMember
 from accounts.serializers import UserSerializer, UserPublicSerializer
 from comments.serializers import CommentSerializer
@@ -18,11 +19,14 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
         
 class ProjectSerializer(serializers.ModelSerializer):
     """Project list serializer"""
-    
+
     owner = UserPublicSerializer(read_only=True)
     manager = UserPublicSerializer(read_only=True)
     manager_id = serializers.IntegerField(write_only=True, required=False)
-    
+
+    name = serializers.CharField(max_length=200, validators=[MaxLengthValidator(200)])
+    description = serializers.CharField(max_length=1000, validators=[MaxLengthValidator(1000)], required=False, allow_blank=True)
+
     is_overdue = serializers.ReadOnlyField()
     total_tasks = serializers.ReadOnlyField()
     completed_tasks = serializers.ReadOnlyField()
