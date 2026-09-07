@@ -42,7 +42,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'priority', 'is_active', 'owner', 'manager']
     search_fields = ['name', 'description']
-    ordering_fields = ['created_at', 'due_date', 'priority']
+    ordering_fields = ['created_at', 'due_date', 'priority', 'name', 'progress']
+    ordering = ['-created_at']
     lookup_field = 'slug'
     
     

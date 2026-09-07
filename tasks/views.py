@@ -87,9 +87,10 @@ class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     pagination_class = TaskPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['project', 'task_list', 'status', 'priority', 'assignee']
+    filterset_fields = ['project', 'task_list', 'status', 'priority', 'assignee', 'task_list__project']
     search_fields = ['title', 'description']
-    ordering_fields = ['created_at', 'due_date', 'priority', 'position']
+    ordering_fields = ['created_at', 'due_date', 'priority', 'position', 'title']
+    ordering = ['-created_at']
    
     def get_permissions(self):
         """Custom permissions based on action."""

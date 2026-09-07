@@ -1,9 +1,10 @@
 # teams/views.py
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count, Avg
 from django.utils import timezone
 from .models import (
@@ -22,7 +23,7 @@ from .permissions import IsTeamLeader, IsTeamMember
 class TeamViewSet(viewsets.ModelViewSet):
     """
     Complete team management viewset.
-    
+
     Endpoints:
     - GET /teams/ - List all teams
     - POST /teams/ - Create a team
@@ -41,9 +42,14 @@ class TeamViewSet(viewsets.ModelViewSet):
     - POST /teams/{id}/create_goal/ - Create team goal
     - GET /teams/{id}/performance/ - Get performance report
     """
-    
+
     queryset = Team.objects.all()
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['owner']
+    search_fields = ['name', 'description']
+    ordering_fields = ['created_at', 'name', 'member_count']
+    ordering = ['-created_at']
 
     def get_serializer_class(self):
         if self.action == 'create':
