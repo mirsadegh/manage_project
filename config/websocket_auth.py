@@ -61,14 +61,16 @@ def get_user_from_token(token_string):
             return TokenValidationResult(error="Token expired")
         
         # Check if token is blacklisted (via its jti)
+        # H-1 fail-closed: DB errors must deny, not allow revoked tokens.
         jti = access_token.get('jti')
         if jti:
             try:
                 outstanding = OutstandingToken.objects.filter(jti=jti).first()
                 if outstanding and BlacklistedToken.objects.filter(token=outstanding).exists():
                     return TokenValidationResult(error="Token has been revoked")
-            except Exception:
-                pass  # If blacklist check fails, continue with validation
+            except Exception as e:
+                logger.error(f"WebSocket blacklist check failed for jti={jti}: {e}")
+                return TokenValidationResult(error="Authentication failed")
         
         # Get user
         user = CustomUser.objects.get(id=user_id, is_active=True)
