@@ -515,7 +515,10 @@ if not DEBUG:
     SECURE_REFERRER_POLICY = 'same-origin'
     SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
     SESSION_COOKIE_HTTPONLY = True
-    CSRF_COOKIE_HTTPONLY = True
+    # C-2: csrftoken must be readable by api.ts getCookie() for X-CSRFToken
+    # header. Auth cookies stay HttpOnly; csrftoken is not a bearer secret
+    # in this SameSite-Lax + header-echo model.
+    CSRF_COOKIE_HTTPONLY = False
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_SAMESITE = 'Lax'
 
