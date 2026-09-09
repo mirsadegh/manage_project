@@ -66,6 +66,13 @@ class ProjectDetailSerializer(ProjectSerializer):
         
 class ProjectCreateSerializer(serializers.ModelSerializer):
     """Create project serializer"""
+    # Write-only alias for the `manager` FK. Without this declaration the
+    # auto-generated field resolves to ReadOnlyField (there is no
+    # `manager_id` model attribute), so any incoming manager_id is
+    # silently dropped and created projects can never have a manager.
+    # Mirrors the explicit declaration already used in ProjectSerializer.
+    manager_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = Project
         fields = [
@@ -73,6 +80,7 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'priority', 'start_date', 'due_date', 'budget',
             'is_public'
         ]
+
 
 
 
