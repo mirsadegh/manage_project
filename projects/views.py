@@ -90,8 +90,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return base_qs.filter(
                 Q(owner=user) |
                 Q(manager=user) |
-                Q(members__user=user) |
-                Q(members__is_active=True)
+                Q(members__user=user, members__is_active=True)
             ).distinct()
 
         return base_qs
