@@ -22,7 +22,7 @@ from .permissions import (
 )
 
 from config.pagination import ProjectPagination
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Subquery, OuterRef
 from django.shortcuts import get_object_or_404
 
 from config.throttling import ProjectCreationThrottle
@@ -80,20 +80,40 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         # Superusers see all projects
         if user.is_superuser or getattr(user, 'role', None) == 'ADMIN':
-            return base_qs
-
+            qs = base_qs
         # Users see projects they own, manage, or are members of.
         # Only `list` filters here; object-level permissions on detail
         # actions (retrieve, update, add_member, ...) decide access so
         # unauthorized users receive 403 rather than a 404.
-        if self.action == 'list':
-            return base_qs.filter(
+        elif self.action == 'list':
+            qs = base_qs.filter(
                 Q(owner=user) |
                 Q(manager=user) |
                 Q(members__user=user, members__is_active=True)
             ).distinct()
+        else:
+            qs = base_qs
 
-        return base_qs
+        # H-3: Optimize N+1 queries in project list serializer.
+        # Annotate counts instead of calling property methods per-instance.
+        # Only needed for list action (uses ProjectSerializer with count fields).
+        if self.action == 'list':
+            from tasks.models import Task
+            from comments.models import Comment
+            from files.models import Attachment
+            from django.contrib.contenttypes.models import ContentType
+
+            # Get content types for GenericRelation annotations
+            project_ct = ContentType.objects.get_for_model(Project)
+
+            qs = qs.annotate(
+                total_tasks_count=Count('tasks', distinct=True),
+                completed_tasks_count=Count('tasks', filter=Q(tasks__status='COMPLETED'), distinct=True),
+                comment_count_ann=Count('comments', filter=Q(comments__content_type=project_ct), distinct=True),
+                attachment_count_ann=Count('attachments', filter=Q(attachments__content_type=project_ct), distinct=True),
+            )
+
+        return qs
     def get_object(self):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         slug = self.kwargs.get(lookup_url_kwarg)

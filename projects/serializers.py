@@ -28,18 +28,42 @@ class ProjectSerializer(serializers.ModelSerializer):
     description = serializers.CharField(max_length=1000, validators=[MaxLengthValidator(1000)], required=False, allow_blank=True)
 
     is_overdue = serializers.ReadOnlyField()
-    total_tasks = serializers.ReadOnlyField()
-    completed_tasks = serializers.ReadOnlyField()
+    total_tasks = serializers.SerializerMethodField()
+    completed_tasks = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
-    comment_count = serializers.ReadOnlyField()
-    attachment_count = serializers.ReadOnlyField()
+    comment_count = serializers.SerializerMethodField()
+    attachment_count = serializers.SerializerMethodField()
+
+    def get_total_tasks(self, obj):
+        # Use annotated count if available (list action), fallback to property (detail)
+        if hasattr(obj, 'total_tasks_count'):
+            return obj.total_tasks_count or 0
+        return obj.total_tasks
+
+    def get_completed_tasks(self, obj):
+        # Use annotated count if available (list action), fallback to property (detail)
+        if hasattr(obj, 'completed_tasks_count'):
+            return obj.completed_tasks_count or 0
+        return obj.completed_tasks
 
     def get_progress(self, obj):
-        total = obj.total_tasks  # calls the @property
+        total = self.get_total_tasks(obj)
         if total == 0:
             return 0
-        completed = obj.completed_tasks  # calls the @property
+        completed = self.get_completed_tasks(obj)
         return int((completed / total) * 100)
+
+    def get_comment_count(self, obj):
+        # Use annotated count if available (list action), fallback to property (detail)
+        if hasattr(obj, 'comment_count_ann'):
+            return obj.comment_count_ann or 0
+        return obj.comment_count
+
+    def get_attachment_count(self, obj):
+        # Use annotated count if available (list action), fallback to property (detail)
+        if hasattr(obj, 'attachment_count_ann'):
+            return obj.attachment_count_ann or 0
+        return obj.attachment_count
 
     class Meta:
         model = Project
