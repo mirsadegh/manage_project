@@ -431,6 +431,9 @@ MAX_CONNECTIONS_PER_USER = int(os.getenv('MAX_CONNECTIONS_PER_USER', '5'))
 # than this are rejected with WS close code 4009. daphne's default is 1 MiB
 # (1048576); we default to 64 KiB which is plenty for JSON control messages.
 MAX_MESSAGE_SIZE = int(os.getenv('WS_MAX_MESSAGE_SIZE', '65536'))
+# Use console-only logging in Docker/development to avoid permission issues
+USE_FILE_LOGGING = os.getenv('USE_FILE_LOGGING', 'false').lower() == 'true'
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -450,51 +453,57 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
-        'file_permissions': {
-            'level': 'WARNING',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs/permissions.log'),
-             'maxBytes': 1024 * 1024 * 5,  # 5 MB
-            'backupCount': 5,
-            'formatter': 'verbose',
-        },
-        'file_celery': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs/celery.log'),
-            'maxBytes': 1024 * 1024 * 10,  # 10 MB
-            'backupCount': 5,
-            'formatter': 'verbose',
-        },
     },
-     'loggers': {
+    'loggers': {
         'permissions': {
-            'handlers': ['file_permissions', 'console'],
+            'handlers': ['console'],
             'level': 'WARNING',
             'propagate': False,
         },
         'celery': {
-            'handlers': ['file_celery', 'console'],
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'files': {
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
         },
     },
 }
 
-LOGGING['handlers']['file_access'] = {
-    'level': 'INFO',
-    'class': 'logging.handlers.RotatingFileHandler',
-    'filename': os.path.join(BASE_DIR, 'logs/file_access.log'),
-    'maxBytes': 1024 * 1024 * 10,  # 10 MB
-    'backupCount': 5,
-    'formatter': 'verbose',
-}
-
-LOGGING['loggers']['files'] = {
-    'handlers': ['file_access', 'console'],
-    'level': 'INFO',
-    'propagate': False,
-}
+# Add file handlers only when explicitly enabled (production)
+if USE_FILE_LOGGING:
+    LOGGING['handlers']['file_permissions'] = {
+        'level': 'WARNING',
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': os.path.join(BASE_DIR, 'logs/permissions.log'),
+        'maxBytes': 1024 * 1024 * 5,  # 5 MB
+        'backupCount': 5,
+        'formatter': 'verbose',
+    }
+    LOGGING['handlers']['file_celery'] = {
+        'level': 'INFO',
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': os.path.join(BASE_DIR, 'logs/celery.log'),
+        'maxBytes': 1024 * 1024 * 10,  # 10 MB
+        'backupCount': 5,
+        'formatter': 'verbose',
+    }
+    LOGGING['handlers']['file_access'] = {
+        'level': 'INFO',
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': os.path.join(BASE_DIR, 'logs/file_access.log'),
+        'maxBytes': 1024 * 1024 * 10,  # 10 MB
+        'backupCount': 5,
+        'formatter': 'verbose',
+    }
+    
+    # Update loggers to use file handlers
+    LOGGING['loggers']['permissions']['handlers'] = ['file_permissions', 'console']
+    LOGGING['loggers']['celery']['handlers'] = ['file_celery', 'console']
+    LOGGING['loggers']['files']['handlers'] = ['file_access', 'console']
 
 
 
