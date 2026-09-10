@@ -9,10 +9,14 @@ from drf_spectacular.views import (
     SpectacularRedocView
 )
 from config.views import root
+from config.health import healthz
 
 urlpatterns = [
     # Root status endpoint
     path('', root, name='root'),
+
+    # Health check (no auth, used by Docker/K8s probes)
+    path('healthz/', healthz, name='healthz'),
 
     # Admin
     path('admin/', admin.site.urls),
@@ -43,8 +47,4 @@ if settings.DEBUG:
         import debug_toolbar
         urlpatterns = [
             path('__debug__/', include(debug_toolbar.urls)),
-        ] + urlpatterns 
-    
-    
-    
-    
+        ] + urlpatterns
