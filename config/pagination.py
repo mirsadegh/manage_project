@@ -70,14 +70,17 @@ class TaskPagination(PageNumberPagination):
     max_page_size = 100
 
     def get_paginated_response(self, data):
-        # Calculate task statistics using single aggregation query for better performance
-        from tasks.models import Task
+        # Calculate task statistics using single aggregation query for better performance.
+        # Use the paginator's queryset (already filtered by the view's filters,
+        # e.g. ?project=, ?status=, search, and permission scoping) instead of
+        # the global Task table, which would leak cross-project data.
         from django.db.models import Count, Q, Sum, Value
         from django.db.models import DecimalField
         from django.db.models.functions import Coalesce
         from datetime import date
 
-        stats = Task.objects.aggregate(
+        filtered_qs = self.page.paginator.object_list
+        stats = filtered_qs.aggregate(
             total_tasks=Count('id'),
             completed_tasks=Count('id', filter=Q(status='COMPLETED')),
             in_progress_tasks=Count('id', filter=Q(status='IN_PROGRESS')),
@@ -106,7 +109,6 @@ class TaskPagination(PageNumberPagination):
             },
             'statistics': stats,
             'results': data,
-            'tasks': data,
         })
 
 
