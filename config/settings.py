@@ -79,9 +79,8 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'django_celery_results',
     
-    # Development tools
-    'django_extensions',
-    'debug_toolbar',
+    # Development tools (DEBUG only — requires requirements-dev.txt;
+    # never installed from requirements-prod.txt, wired below)
     
     # apps
     'accounts',
@@ -111,8 +110,11 @@ MIDDLEWARE = [
     'files.middleware.FileAccessLoggingMiddleware',
 ]
 
-# Add debug toolbar only in development (not testing)
-if not 'test' in sys.argv:
+# Add dev-only tools when DEBUG is on (never in production or tests).
+# requirements-prod.txt excludes these packages, so importing them
+# unconditionally would crash prod with ModuleNotFoundError.
+if DEBUG and 'test' not in sys.argv:
+    INSTALLED_APPS += ['django_extensions', 'debug_toolbar']
     MIDDLEWARE.append('debug_toolbar.middleware.DebugToolbarMiddleware')
 
 ROOT_URLCONF = 'config.urls'

@@ -36,3 +36,15 @@ EXPOSE 8000
 
 # Default: run daphne (ASGI server for Channels support)
 CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]
+
+# Stage 3: Development image (dev deps on top of prod base)
+FROM deps AS dev
+
+WORKDIR /app
+
+COPY requirements-prod.txt /tmp/requirements-prod.txt
+COPY requirements-dev.txt /tmp/requirements-dev.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-dev.txt
+
+# Default: runserver with live reload via bind mount (see docker-compose.dev.yml)
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

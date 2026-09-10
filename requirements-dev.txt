@@ -1,8 +1,13 @@
 # Development dependencies
 # Install with: pip install -r requirements-dev.txt
 
-# Include base requirements
--r requirements.txt
+# Dev is an exact superset of prod: base image installs
+# requirements-prod.txt, dev stage adds this file on top.
+-r requirements-prod.txt
+
+# Dev-only Django tools (never in prod)
+django-debug-toolbar==6.1.0
+django-extensions==4.1
 
 # Code formatting
 black==24.3.0
