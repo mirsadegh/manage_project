@@ -183,6 +183,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check for missing migrations
+        # Fails if models changed without a corresponding migration file.
+        # Closes the drift gap: pytest uses DisableMigrations and `migrate`
+        # alone applies stale-but-valid migrations without complaint.
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          DEBUG: "False"
+          DATABASE_URL: ""
+          DATABASE_NAME: test_db
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+        run: python manage.py makemigrations --check --dry-run
+
       - name: Apply migrations
         # DATABASE_URL is unset so settings falls through to the individual
         # DATABASE_* vars pointing at the Postgres service above.
