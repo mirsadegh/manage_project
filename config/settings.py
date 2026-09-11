@@ -512,6 +512,12 @@ if USE_FILE_LOGGING:
 # Debug Toolbar (Development only)
 INTERNAL_IPS = ['127.0.0.1', 'localhost']
 
+# M-2: tokens returned in the JSON body of login/register/refresh responses
+# are an XSS-theft surface that defeats the PR-6 HttpOnly-cookie auth model.
+# Default OFF; clients authenticate via cookies only. Enable explicitly
+# (RETURN_TOKENS_IN_BODY=true) only for legacy tooling or debugging.
+RETURN_TOKENS_IN_BODY = os.getenv('RETURN_TOKENS_IN_BODY', 'false').lower() == 'true'
+
 # Security Settings (Production)
 if not DEBUG:
     SECURE_SSL_REDIRECT = True

@@ -219,7 +219,19 @@ def test_jwt_access_token_payload_excludes_email(api_client):
     user = _make_user(User.Role.DEVELOPER, username='jwt_user2')
     response = _login(api_client, user)
     assert response.status_code == status.HTTP_200_OK
-    access = response.data['access']
+    # M-2: the access token is no longer in the JSON body by default;
+    # it is delivered exclusively via the HttpOnly ws_access cookie.
+    # READ_TOKENS_IN_BODY legacy flag restores the body token.
+    from django.conf import settings
+    from config.auth_cookies import ACCESS_COOKIE
+    if settings.RETURN_TOKENS_IN_BODY:
+        access = response.data['access']
+    else:
+        assert 'access' not in response.data, (
+            'access token must not be in response body unless '
+            'RETURN_TOKENS_IN_BODY is enabled'
+        )
+        access = response.cookies[ACCESS_COOKIE].value
     payload = AccessToken(access).payload
     assert 'username' in payload
     assert 'role' in payload

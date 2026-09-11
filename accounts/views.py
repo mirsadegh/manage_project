@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.core.mail import send_mail
@@ -71,9 +72,11 @@ class RegisterView(generics.CreateAPIView):
         refresh_str = str(refresh)
 
         # PR-6: also set the tokens as HttpOnly cookies so the
-        # WebSocket upgrade can authenticate without ?token=. The JSON
-        # body is preserved for backward compatibility with existing
-        # tools and tests.
+        # WebSocket upgrade can authenticate without ?token=. M-2: the
+        # token values are NOT returned in the JSON body; they are
+        # XSS-theft-prone and the cookie is the auth channel. Set
+        # RETURN_TOKENS_IN_BODY=true to restore body tokens for legacy
+        # tooling/debugging.
         response = Response({
             'message': 'Registration successful',
             'user': {
@@ -87,6 +90,8 @@ class RegisterView(generics.CreateAPIView):
             }
         }, status=status.HTTP_201_CREATED)
         set_auth_cookies(response, access=access, refresh=refresh_str)
+        if not settings.RETURN_TOKENS_IN_BODY:
+            response.data.pop('tokens', None)
         return response
 
 
@@ -116,6 +121,11 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 access=response.data.get('access'),
                 refresh=response.data.get('refresh'),
             )
+            # M-2: tokens stay in HttpOnly cookies only unless the
+            # legacy body-mode env flag is set.
+            if not settings.RETURN_TOKENS_IN_BODY:
+                response.data.pop('access', None)
+                response.data.pop('refresh', None)
         return response
 
 
@@ -453,4 +463,9 @@ class CookieTokenRefreshView(TokenRefreshView):
                 access=response.data.get('access'),
                 refresh=response.data.get('refresh'),
             )
+            # M-2: same suppression as CustomTokenObtainPairView -- tokens
+            # stay in cookies unless RETURN_TOKENS_IN_BODY is set.
+            if not settings.RETURN_TOKENS_IN_BODY:
+                response.data.pop('access', None)
+                response.data.pop('refresh', None)
         return response

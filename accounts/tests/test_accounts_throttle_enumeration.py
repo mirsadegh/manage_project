@@ -330,7 +330,12 @@ def test_registration_duplicate_username_returns_generic_message(anon_client):
 
 @pytest.mark.django_db
 def test_registration_returns_tokens(anon_client):
-    """L-2 (intentional): successful registration returns access + refresh."""
+    """L-2 (intentional): successful registration auto-logs-in the user
+    via HttpOnly cookies. The JWT tokens themselves are NOT in the JSON
+    body unless RETURN_TOKENS_IN_BODY is enabled (M-2)."""
+    from django.conf import settings
+    from config.auth_cookies import ACCESS_COOKIE, REFRESH_COOKIE
+
     url = reverse('register')
     response = anon_client.post(url, {
         'username': 'autologin_user',
@@ -341,8 +346,16 @@ def test_registration_returns_tokens(anon_client):
         'last_name': 'Login',
     }, format='json')
     assert response.status_code == status.HTTP_201_CREATED, response.content
-    assert 'tokens' in response.data
-    assert 'access' in response.data['tokens']
-    assert 'refresh' in response.data['tokens']
     assert 'user' in response.data
     assert response.data['user']['username'] == 'autologin_user'
+    # L-2: registration must still auto-authenticate -- the tokens are
+    # in the Set-Cookie headers regardless of the body flag.
+    assert ACCESS_COOKIE in response.cookies
+    assert REFRESH_COOKIE in response.cookies
+    # M-2: body tokens only when explicitly enabled.
+    if settings.RETURN_TOKENS_IN_BODY:
+        assert 'tokens' in response.data
+        assert 'access' in response.data['tokens']
+        assert 'refresh' in response.data['tokens']
+    else:
+        assert 'tokens' not in response.data

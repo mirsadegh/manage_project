@@ -1,7 +1,7 @@
 import pytest
 from rest_framework import status
 from django.contrib.auth import get_user_model
-
+from django.conf import settings
 User = get_user_model()
 
 
@@ -72,8 +72,20 @@ class TestUserAuthentication:
         response = api_client.post(login_url, data)
         
         assert response.status_code == status.HTTP_200_OK
-        assert 'access' in response.data
-        assert 'refresh' in response.data
+        # M-2: tokens are set as HttpOnly cookies only. When
+        # RETURN_TOKENS_IN_BODY is False (the default), the JSON body
+        # must NOT carry access/refresh tokens -- that is an XSS-theft
+        # surface. When the legacy flag is enabled, body tokens remain
+        # for backward compatibility with legacy tooling.
+        from config.auth_cookies import ACCESS_COOKIE, REFRESH_COOKIE
+        assert ACCESS_COOKIE in response.cookies
+        assert REFRESH_COOKIE in response.cookies
+        if settings.RETURN_TOKENS_IN_BODY:
+            assert 'access' in response.data
+            assert 'refresh' in response.data
+        else:
+            assert 'access' not in response.data
+            assert 'refresh' not in response.data
 
     def test_user_login_wrong_password(self, api_client, login_url, user):
         """Test login with an incorrect password."""
