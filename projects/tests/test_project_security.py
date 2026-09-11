@@ -82,8 +82,9 @@ def private_project(owner):
 
 
 def _project_list(response_json):
-    """ProjectPagination wraps data under 'projects' key."""
-    return response_json.get('projects', response_json.get('results', []))
+    """M-4: unified envelope -- data is always under 'results' now.
+    Fallback to 'projects' only for backward-compat safety."""
+    return response_json.get('results', response_json.get('projects', []))
 
 
 # ─── C-1: list does not enumerate public projects to non-members ───

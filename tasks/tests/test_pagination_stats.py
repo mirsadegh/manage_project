@@ -140,7 +140,7 @@ class TestPaginationStatsScoping:
         )
         assert response.status_code == status.HTTP_200_OK
 
-        assert response.data['pagination']['count'] == 3
+        assert response.data['count'] == 3
         assert response.data['statistics']['total_tasks'] == 3
 
 
@@ -164,5 +164,8 @@ class TestPaginationPayloadShape:
         assert 'results' in body
         assert 'tasks' not in body
         assert 'statistics' in body
-        assert 'pagination' in body
+        # M-4: pagination keys are now top-level (not nested under 'pagination')
+        assert 'count' in body
+        assert body['count'] == 1
+        assert 'pagination' not in body
         assert len(body['results']) == 1

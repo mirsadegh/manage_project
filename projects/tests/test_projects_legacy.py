@@ -251,9 +251,9 @@ class ProjectPaginationTests(APITestCase):
         response = self.client.get(self.project_list_url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['projects']), 15)
-        self.assertEqual(response.data['pagination']['total_pages'], 2)
-        self.assertEqual(response.data['pagination']['count'], 25)
+        self.assertEqual(len(response.data['results']), 15)
+        self.assertEqual(response.data['total_pages'], 2)
+        self.assertEqual(response.data['count'], 25)
     
     def test_custom_page_size(self):
         """Test custom page size"""
@@ -261,8 +261,8 @@ class ProjectPaginationTests(APITestCase):
         response = self.client.get(f'{self.project_list_url}?page_size=5')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['projects']), 5)
-        self.assertEqual(response.data['pagination']['total_pages'], 5)
+        self.assertEqual(len(response.data['results']), 5)
+        self.assertEqual(response.data['total_pages'], 5)
     
     def test_page_navigation(self):
         """Test navigating between pages"""
@@ -271,14 +271,14 @@ class ProjectPaginationTests(APITestCase):
         # Get page 1
         response = self.client.get(f'{self.project_list_url}?page=1')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNone(response.data['pagination']['previous'])
-        self.assertIsNotNone(response.data['pagination']['next'])
+        self.assertIsNone(response.data['previous'])
+        self.assertIsNotNone(response.data['next'])
         
         # Get page 2
         response = self.client.get(f'{self.project_list_url}?page=2')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data['pagination']['previous'])
-        self.assertIsNone(response.data['pagination']['next'])
+        self.assertIsNotNone(response.data['previous'])
+        self.assertIsNone(response.data['next'])
 
 
 class ProjectFilteringTests(APITestCase):
@@ -320,8 +320,8 @@ class ProjectFilteringTests(APITestCase):
         response = self.client.get(f'{self.project_list_url}?status=IN_PROGRESS')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['pagination']['count'], 1)
-        self.assertEqual(response.data['projects'][0]['status'], 'IN_PROGRESS')
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['status'], 'IN_PROGRESS')
     
     def test_filter_by_priority(self):
         """Test filtering projects by priority"""
@@ -329,8 +329,8 @@ class ProjectFilteringTests(APITestCase):
         response = self.client.get(f'{self.project_list_url}?priority=HIGH')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['pagination']['count'], 1)
-        self.assertEqual(response.data['projects'][0]['priority'], 'HIGH')
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['priority'], 'HIGH')
     
     def test_search_projects(self):
         """Test searching projects by name - فقط پروژه‌های قابل دیدن کاربر"""
@@ -351,15 +351,15 @@ class ProjectFilteringTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
         # --- اصلاح شد: انتظار داریم فقط 1 مورد پیدا شود، نه کل پروژه‌ها ---
-        self.assertEqual(response.data['pagination']['count'], 1) 
+        self.assertEqual(response.data['count'], 1) 
         # ---------------------------------------------------------------
 
         # بررسی اینکه آیا واقعا همانی است که ما ساختیم
-        self.assertEqual(response.data['projects'][0]['name'], unique_name)
+        self.assertEqual(response.data['results'][0]['name'], unique_name)
 
         # بخش دوم تست شما هم درست است (جستجو با بخشی از کلمه)
         response2 = self.client.get(f'{self.project_list_url}?search=14031234')
-        self.assertEqual(response2.data['pagination']['count'], 1)
-        self.assertEqual(response2.data['projects'][0]['name'], unique_name)
+        self.assertEqual(response2.data['count'], 1)
+        self.assertEqual(response2.data['results'][0]['name'], unique_name)
         
         

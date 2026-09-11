@@ -48,17 +48,17 @@ class ProjectPagination(PageNumberPagination):
     max_page_size = 50
     
     def get_paginated_response(self, data):
-        return Response({
-            'pagination': {
-                'count': self.page.paginator.count,
-                'total_pages': self.page.paginator.num_pages,
-                'current_page': self.page.number,
-                'page_size': self.page_size,
-                'next': self.get_next_link(),
-                'previous': self.get_previous_link(),
-            },
-            'projects': data
-        })
+        # M-4: unified envelope -- standard top-level shape matching
+        # StandardResultsSetPagination. Data under 'results' (not 'projects').
+        return Response(OrderedDict([
+            ('count', self.page.paginator.count),
+            ('next', self.get_next_link()),
+            ('previous', self.get_previous_link()),
+            ('total_pages', self.page.paginator.num_pages),
+            ('current_page', self.page.number),
+            ('page_size', self.page_size),
+            ('results', data),
+        ]))
 
 
 class TaskPagination(PageNumberPagination):
@@ -98,18 +98,18 @@ class TaskPagination(PageNumberPagination):
             (stats['completed_tasks'] / stats['total_tasks']) * 100
         ) if stats['total_tasks'] else 0
 
-        return Response({
-            'pagination': {
-                'count': self.page.paginator.count,
-                'total_pages': self.page.paginator.num_pages,
-                'current_page': self.page.number,
-                'page_size': self.page_size,
-                'next': self.get_next_link(),
-                'previous': self.get_previous_link(),
-            },
-            'statistics': stats,
-            'results': data,
-        })
+        # M-4: unified envelope -- pagination keys are top-level to match
+        # StandardResultsSetPagination; statistics stay as a sibling key.
+        return Response(OrderedDict([
+            ('count', self.page.paginator.count),
+            ('next', self.get_next_link()),
+            ('previous', self.get_previous_link()),
+            ('total_pages', self.page.paginator.num_pages),
+            ('current_page', self.page.number),
+            ('page_size', self.page_size),
+            ('statistics', stats),
+            ('results', data),
+        ]))
 
 
 class CustomLimitOffsetPagination(LimitOffsetPagination):

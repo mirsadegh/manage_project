@@ -102,7 +102,7 @@ class TestProjectListNPlus1Fix:
         assert response.status_code == status.HTTP_200_OK
         
         # Find our project in the results
-        results = response.data['projects']
+        results = response.data['results']
         project_data = next((p for p in results if p['slug'] == 'test-project'), None)
         
         assert project_data is not None
@@ -117,7 +117,7 @@ class TestProjectListNPlus1Fix:
         
         assert response.status_code == status.HTTP_200_OK
         
-        results = response.data['projects']
+        results = response.data['results']
         
         # Project 0: 1 task (1 completed) -> progress 100
         # Project 1: 2 tasks (1 completed) -> progress 50
@@ -166,7 +166,7 @@ class TestProjectListNPlus1Fix:
             "\n".join(f"{i+1}. {q['sql'][:100]}..." for i, q in enumerate(queries))
         
         # Verify the results are still correct
-        results = response.data['projects']
+        results = response.data['results']
         assert len(results) == 5
 
     def test_project_detail_uses_fallback(self, api_client, owner, project_with_tasks):
