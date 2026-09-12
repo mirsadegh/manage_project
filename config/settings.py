@@ -48,7 +48,8 @@ if not SECRET_KEY:
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG',  'True') == 'True'
+# Audit Fix 3: Default to False for safety. Set DEBUG=True explicitly in dev .env.
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
@@ -246,12 +247,16 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 
 
 # CORS Settings
+# Audit Fix 1: Read from environment so production domains work.
+# Comma-separated list; empty entries are stripped.
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    origin.strip()
+    for origin in os.getenv(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:5173,http://localhost:3000,http://localhost:3001,'
+        'http://127.0.0.1:5173,http://127.0.0.1:3000'
+    ).split(',')
+    if origin.strip()
 ]
 
 CORS_ALLOW_CREDENTIALS = True

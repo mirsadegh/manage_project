@@ -2,10 +2,12 @@
 # Stage 1: Install dependencies (cached unless requirements change)
 FROM python:3.13-slim AS deps
 
+# Audit Fix 2: Added curl for production healthcheck in docker-compose.yml.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     libmagic1 \
     clamav-daemon \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-prod.txt /tmp/requirements-prod.txt

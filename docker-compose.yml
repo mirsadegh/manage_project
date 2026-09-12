@@ -72,6 +72,10 @@ services:
     command: celery -A config worker -l info
     env_file: .env
     environment:
+      # Audit Fix 4: Clear DATABASE_URL so settings.py falls through to
+      # DATABASE_HOST=db (the compose service name), not localhost from .env.
+      - DATABASE_URL=
+      - DATABASE_HOST=db
       - SECRET_KEY=${SECRET_KEY}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -91,6 +95,9 @@ services:
     command: celery -A config beat -l info
     env_file: .env
     environment:
+      # Audit Fix 4: Same DATABASE_URL override as worker above.
+      - DATABASE_URL=
+      - DATABASE_HOST=db
       - SECRET_KEY=${SECRET_KEY}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
