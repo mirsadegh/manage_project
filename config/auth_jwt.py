@@ -37,6 +37,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import Token
 
 from .auth_cookies import ACCESS_COOKIE
+from django.core.cache import cache
 
 
 class CookieJWTAuthentication(JWTAuthentication):
@@ -86,8 +87,10 @@ class CookieJWTAuthentication(JWTAuthentication):
 
         The parent class only checks signature, expiry, and token type.
         We additionally look up the `jti` claim in the
-        `BlacklistedToken` table and raise `InvalidToken` if found.
-        That keeps the HTTP and WebSocket auth surfaces in sync:
+        `BlacklistedToken` table, and in the Redis access-token
+        blacklist that `LogoutView` maintains, and raise
+        `InvalidToken` if either marks the token revoked. That keeps
+        the HTTP and WebSocket auth surfaces in sync:
         `_blacklist_user_tokens()` (called by `LogoutView` with
         `logout_all=True`, by `change_password`, by `deactivate_account`,
         and by the password-reset-confirm flow) revokes tokens for
@@ -102,6 +105,15 @@ class CookieJWTAuthentication(JWTAuthentication):
 
         jti = validated_token.get("jti")
         if jti and BlacklistedToken.objects.filter(token__jti=jti).exists():
+            raise InvalidToken("Token is blacklisted")
+
+        # Access-token blacklist (Redis): SimpleJWT's OutstandingToken
+        # table only tracks refresh tokens, so LogoutView additionally
+        # writes the presented access token's jti to the cache for its
+        # remaining lifetime. Enforce it here so the WS path and the
+        # HTTP path agree on what "logged out" means.
+        from .websocket_auth import _blacklist_key
+        if jti and cache.get(_blacklist_key(jti)):
             raise InvalidToken("Token is blacklisted")
 
         return validated_token

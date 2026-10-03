@@ -10,10 +10,10 @@ websocket_urlpatterns = [
     path('ws/projects/<slug:project_slug>/', ProjectConsumer.as_asgi()),
 ]
 
-application = ProtocolTypeRouter({
-    'websocket': AllowedHostsOriginValidator(  # Security: validate origin
-        JWTAuthMiddleware(
-            URLRouter(websocket_urlpatterns)
-        )
-    ),
-})
+# application = ProtocolTypeRouter({
+#     'websocket': AllowedHostsOriginValidator(  # Security: validate origin
+#         JWTAuthMiddleware(
+#             URLRouter(websocket_urlpatterns)
+#         )
+#     ),
+# })

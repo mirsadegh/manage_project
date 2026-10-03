@@ -3,6 +3,7 @@ from channels.middleware import BaseMiddleware
 from channels.exceptions import DenyConnection
 from django.contrib.auth.models import AnonymousUser
 from django.core.cache import cache
+from django.conf import settings
 from rest_framework_simplejwt.tokens import AccessToken, TokenError
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
@@ -15,9 +16,59 @@ import time
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Access-token blacklist (Redis)
+# ---------------------------------------------------------------------------
+# SimpleJWT's OutstandingToken table only tracks *refresh* tokens, so an
+# access token stays usable until its TTL expires. On logout we therefore
+# store its jti in the Django cache with a TTL equal to the token's
+# remaining lifetime. The entry dies on its own exactly when the token
+# stops being verifiable, so the blacklist cannot outlive the threat.
+
+def _blacklist_key(jti: str) -> str:
+    """Cache key for a revoked access-token jti."""
+    return f"ws_access_blacklist_{jti}"
+
+
+def blacklist_access_token(token_string: str) -> None:
+    """Blacklist an access token in Redis for the rest of its lifetime.
+
+    Called on logout. Extracts jti/exp and writes the jti to the cache
+    with the token's remaining lifetime as TTL. A token whose payload
+    cannot be decoded is skipped, not raised: logging out should never
+    fail because the presented token was malformed.
+    """
+    try:
+        access_token = AccessToken(token_string)
+    except Exception:
+        logger.warning("access-token blacklist: undecodable token, skipping")
+        return
+    jti = access_token.get("jti")
+    if not jti:
+        return
+    exp = access_token.get("exp")
+    # TTL bounded to remaining lifetime, clamped to >=1s so the entry is
+    # always written even for a token in its final second.
+    ttl = max(1, int(exp - time.time())) if exp else int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds())
+    cache.set(_blacklist_key(jti), "1", ttl)
+    logger.info("blacklisted access token jti=%s ttl=%ss", jti, ttl)
+
+
+def is_access_token_blacklisted(token_string: str) -> bool:
+    """Return True if the access token's jti is on the blacklist."""
+    try:
+        access_token = AccessToken(token_string)
+    except Exception:
+        return True  # fail-closed: undecodable => not trusted
+    jti = access_token.get("jti")
+    if not jti:
+        return True  # an access token without a jti cannot be blacklisted
+    return bool(cache.get(_blacklist_key(jti)))
+
+
 class TokenValidationResult:
     """Container for token validation results."""
-    
+
     def __init__(self, user=None, error=None, is_valid=False):
         self.user = user or AnonymousUser()
         self.error = error
@@ -32,6 +83,15 @@ def get_user_from_token(token_string):
     """
     if not token_string:
         return TokenValidationResult(error="No token provided")
+
+    # Access-token blacklist: checked BEFORE the token cache so a jti
+    # blacklisted after this token was first validated can never be
+    # served from cache. logout also flushes the per-user cache, but
+    # this check is the authoritative gate. Fail-closed: a blacklisted
+    # token must never be allowed because the store was unreachable.
+    if is_access_token_blacklisted(token_string):
+        logger.warning("WebSocket auth denied - blacklisted access token")
+        return TokenValidationResult(error="Token has been revoked")
     
     # Check cache first for performance
     cache_key = f"ws_token_{hash(token_string)}"
@@ -297,19 +357,19 @@ class JWTAuthMiddleware(BaseMiddleware):
         })
 
 
-class JWTAuthMiddlewareStack:
-    """
-    Convenience wrapper to create the full middleware stack.
+# class JWTAuthMiddlewareStack:
+#     """
+#     Convenience wrapper to create the full middleware stack.
     
-    Usage:
-        application = ProtocolTypeRouter({
-            'websocket': JWTAuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
-        })
-    """
+#     Usage:
+#         application = ProtocolTypeRouter({
+#             'websocket': JWTAuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
+#         })
+#     """
     
-    def __init__(self, inner):
-        self.inner = JWTAuthMiddleware(inner)
+#     def __init__(self, inner):
+#         self.inner = JWTAuthMiddleware(inner)
     
-    def __call__(self, scope):
-        return self.inner(scope)
+#     def __call__(self, scope):
+#         return self.inner(scope)
 

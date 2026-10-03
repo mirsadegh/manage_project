@@ -26,8 +26,8 @@ from .serializers import (
 from .permissions import IsAdminOrManager, IsAdmin
 from config.pagination import StandardResultsSetPagination
 from config.throttling import LoginRateThrottle
-from config.auth_cookies import set_auth_cookies, clear_auth_cookies
-User = get_user_model()
+from config.auth_cookies import set_auth_cookies, clear_auth_cookies, ACCESS_COOKIE
+from config.websocket_auth import blacklist_access_token
 logger = logging.getLogger('accounts')
 
 
@@ -128,7 +128,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 response.data.pop('refresh', None)
         return response
 
-
 class LogoutView(APIView):
     """
     Logout endpoint that blacklists the refresh token.
@@ -138,8 +137,29 @@ class LogoutView(APIView):
     This complements the existing JWT blacklisting; the
     force_disconnect signal (PR-3 Fix #1) takes care of any open
     WebSocket connections.
+
+    Access-token blacklist: SimpleJWT's OutstandingToken table only
+    tracks refresh tokens, so without this the ws_access cookie would
+    stay valid (and a copied access token usable) until its natural
+    TTL. On every logout we therefore also write the presented access
+    token's jti to the Redis cache for its remaining lifetime, which
+    config.websocket_auth consults on every WS handshake. The cache
+    entry expires on its own at exactly the moment the token stops
+    being verifiable, so it cannot outlive the threat.
     """
     permission_classes = [permissions.IsAuthenticated]
+
+    def _resolve_access_token(self, request):
+        """Extract the access token from header or cookie.
+
+        Mirrors config.auth_jwt.CookieJWTAuthentication's lookup so the
+        token we blacklist is the same one the client is authenticating
+        with, whatever transport carried it.
+        """
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            return auth_header[7:]
+        return request.COOKIES.get(ACCESS_COOKIE)
 
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
@@ -151,6 +171,12 @@ class LogoutView(APIView):
         if logout_all:
             # PR-4: use the shared helper instead of inlining the loop.
             _blacklist_user_tokens(request.user)
+            # Revoke every device's access token too: the blacklist
+            # helpers share the same cache namespace, so an already
+            # revoked jti is simply rewritten harmlessly.
+            access_token = self._resolve_access_token(request)
+            if access_token:
+                blacklist_access_token(access_token)
             response = Response({'message': 'Successfully logged out from all devices'})
             clear_auth_cookies(response)
             return response
@@ -159,6 +185,13 @@ class LogoutView(APIView):
             try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
+                # Access token outlives the refresh token by design, so
+                # revoke it explicitly here as well — without this the
+                # WS socket could reconnect immediately after the
+                # force-disconnect.
+                access_token = self._resolve_access_token(request)
+                if access_token:
+                    blacklist_access_token(access_token)
                 response = Response({'message': 'Successfully logged out'})
                 clear_auth_cookies(response)
                 return response
@@ -179,7 +212,6 @@ class PasswordResetRequestView(APIView):
     Request a password reset email.
     """
     permission_classes = [permissions.AllowAny]
-    # PR-4 M-2: attach ScopedRateThrottle so the existing
     # `throttle_scope = 'password_reset'` actually applies (5/hour per IP).
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'password_reset'
