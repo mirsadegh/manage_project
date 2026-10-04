@@ -27,8 +27,11 @@ from .permissions import IsAdminOrManager, IsAdmin
 from config.pagination import StandardResultsSetPagination
 from config.throttling import LoginRateThrottle
 from config.auth_cookies import set_auth_cookies, clear_auth_cookies, ACCESS_COOKIE
-from config.websocket_auth import blacklist_access_token
+from config.token_blacklist import blacklist_access_token
+
 logger = logging.getLogger('accounts')
+
+User = get_user_model()
 
 
 def _blacklist_user_tokens(user):
@@ -134,18 +137,16 @@ class LogoutView(APIView):
     Supports both single token logout and logout from all devices.
 
     PR-6: also clears the auth cookies so the browser drops them.
-    This complements the existing JWT blacklisting; the
-    force_disconnect signal (PR-3 Fix #1) takes care of any open
-    WebSocket connections.
+    The force_disconnect signal (PR-3 Fix #1) closes any open WS
+    connections immediately.
 
     Access-token blacklist: SimpleJWT's OutstandingToken table only
     tracks refresh tokens, so without this the ws_access cookie would
-    stay valid (and a copied access token usable) until its natural
-    TTL. On every logout we therefore also write the presented access
-    token's jti to the Redis cache for its remaining lifetime, which
-    config.websocket_auth consults on every WS handshake. The cache
-    entry expires on its own at exactly the moment the token stops
-    being verifiable, so it cannot outlive the threat.
+    stay valid until its natural TTL. On every logout we also write the
+    presented access token's jti to the Redis cache for its remaining
+    lifetime, which both WS and HTTP auth consult on every request. The
+    cache entry expires on its own at exactly the moment the token
+    stops being verifiable, so it cannot outlive the threat.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -169,14 +170,23 @@ class LogoutView(APIView):
         logout_all = serializer.validated_data.get('logout_all', False)
 
         if logout_all:
-            # PR-4: use the shared helper instead of inlining the loop.
-            _blacklist_user_tokens(request.user)
-            # Revoke every device's access token too: the blacklist
-            # helpers share the same cache namespace, so an already
-            # revoked jti is simply rewritten harmlessly.
+            # Blacklist the calling device's access token FIRST. The
+            # BlacklistedToken post_save signal fires force_disconnect;
+            # if the refresh side ran first, a client reconnecting in
+            # that window could slip past the not-yet-written access
+            # token. Other devices' access tokens are not individually
+            # tracked and expire within ACCESS_TOKEN_LIFETIME — they
+            # cannot obtain new tokens once every refresh is revoked.
             access_token = self._resolve_access_token(request)
-            if access_token:
-                blacklist_access_token(access_token)
+            if access_token and not blacklist_access_token(access_token):
+                logger.error(
+                    "logout_all: access-token blacklist write failed for "
+                    "user_id=%s; token may remain valid beyond expected TTL",
+                    request.user.id,
+                )
+            # PR-4: shared helper. Runs after the access token so the
+            # signal it triggers sees the jti already revoked.
+            _blacklist_user_tokens(request.user)
             response = Response({'message': 'Successfully logged out from all devices'})
             clear_auth_cookies(response)
             return response
@@ -184,23 +194,30 @@ class LogoutView(APIView):
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
-                token.blacklist()
-                # Access token outlives the refresh token by design, so
-                # revoke it explicitly here as well — without this the
-                # WS socket could reconnect immediately after the
-                # force-disconnect.
-                access_token = self._resolve_access_token(request)
-                if access_token:
-                    blacklist_access_token(access_token)
-                response = Response({'message': 'Successfully logged out'})
-                clear_auth_cookies(response)
-                return response
             except TokenError:
                 return Response(
                     {'error': 'Invalid or expired token'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
+            # Access token outlives the refresh token by design, so
+            # revoke it BEFORE the refresh blacklist: the post_save
+            # signal force-disconnects live sockets, and a client
+            # reconnecting immediately must find the jti already
+            # revoked. The RefreshToken constructor above still runs
+            # first, so an invalid refresh still returns the same 400
+            # with nothing revoked.
+            access_token = self._resolve_access_token(request)
+            if access_token and not blacklist_access_token(access_token):
+                logger.error(
+                    "single logout: access-token blacklist write failed "
+                    "for user_id=%s; token may remain valid beyond "
+                    "expected TTL",
+                    request.user.id,
+                )
+            token.blacklist()
+            response = Response({'message': 'Successfully logged out'})
+            clear_auth_cookies(response)
+            return response
         return Response(
             {'error': 'Refresh token is required'},
             status=status.HTTP_400_BAD_REQUEST
