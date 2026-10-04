@@ -1,69 +1,18 @@
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
-from channels.exceptions import DenyConnection
 from django.contrib.auth.models import AnonymousUser
 from django.core.cache import cache
-from django.conf import settings
 from rest_framework_simplejwt.tokens import AccessToken, TokenError
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from accounts.models import CustomUser
 from urllib.parse import parse_qs
 from .auth_cookies import ACCESS_COOKIE, get_cookie
+from .token_blacklist import is_jti_blacklisted
 import logging
 import time
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Access-token blacklist (Redis)
-# ---------------------------------------------------------------------------
-# SimpleJWT's OutstandingToken table only tracks *refresh* tokens, so an
-# access token stays usable until its TTL expires. On logout we therefore
-# store its jti in the Django cache with a TTL equal to the token's
-# remaining lifetime. The entry dies on its own exactly when the token
-# stops being verifiable, so the blacklist cannot outlive the threat.
-
-def _blacklist_key(jti: str) -> str:
-    """Cache key for a revoked access-token jti."""
-    return f"ws_access_blacklist_{jti}"
-
-
-def blacklist_access_token(token_string: str) -> None:
-    """Blacklist an access token in Redis for the rest of its lifetime.
-
-    Called on logout. Extracts jti/exp and writes the jti to the cache
-    with the token's remaining lifetime as TTL. A token whose payload
-    cannot be decoded is skipped, not raised: logging out should never
-    fail because the presented token was malformed.
-    """
-    try:
-        access_token = AccessToken(token_string)
-    except Exception:
-        logger.warning("access-token blacklist: undecodable token, skipping")
-        return
-    jti = access_token.get("jti")
-    if not jti:
-        return
-    exp = access_token.get("exp")
-    # TTL bounded to remaining lifetime, clamped to >=1s so the entry is
-    # always written even for a token in its final second.
-    ttl = max(1, int(exp - time.time())) if exp else int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds())
-    cache.set(_blacklist_key(jti), "1", ttl)
-    logger.info("blacklisted access token jti=%s ttl=%ss", jti, ttl)
-
-
-def is_access_token_blacklisted(token_string: str) -> bool:
-    """Return True if the access token's jti is on the blacklist."""
-    try:
-        access_token = AccessToken(token_string)
-    except Exception:
-        return True  # fail-closed: undecodable => not trusted
-    jti = access_token.get("jti")
-    if not jti:
-        return True  # an access token without a jti cannot be blacklisted
-    return bool(cache.get(_blacklist_key(jti)))
 
 
 class TokenValidationResult:
@@ -79,86 +28,98 @@ class TokenValidationResult:
 def get_user_from_token(token_string):
     """
     Validate JWT token and return user.
-    Includes blacklist checking and caching for performance.
+    Decodes once; blacklist check by jti precedes result cache lookup.
     """
     if not token_string:
         return TokenValidationResult(error="No token provided")
 
-    # Access-token blacklist: checked BEFORE the token cache so a jti
-    # blacklisted after this token was first validated can never be
-    # served from cache. logout also flushes the per-user cache, but
-    # this check is the authoritative gate. Fail-closed: a blacklisted
-    # token must never be allowed because the store was unreachable.
-    if is_access_token_blacklisted(token_string):
-        logger.warning("WebSocket auth denied - blacklisted access token")
-        return TokenValidationResult(error="Token has been revoked")
-    
-    # Check cache first for performance
-    cache_key = f"ws_token_{hash(token_string)}"
-    cached_user_id = cache.get(cache_key)
-    
-    if cached_user_id:
-        try:
-            user = CustomUser.objects.get(id=cached_user_id, is_active=True)
-            return TokenValidationResult(user=user, is_valid=True)
-        except CustomUser.DoesNotExist:
-            cache.delete(cache_key)
-            # PR-3 Fix #1: prune from per-user set so invalidate doesn't
-            # try to delete a key that's already gone.
-            _untrack_token_for_user(cached_user_id, cache_key)
-    
+    # Decode once. Any failure here is generic "Authentication failed" to
+    # the client; the real reason is logged server-side.
     try:
-        # Validate token
         access_token = AccessToken(token_string)
-        user_id = access_token.get('user_id')
-        
+    except InvalidToken as e:
+        logger.warning("WebSocket auth failed - Invalid token: %s", e)
+        return TokenValidationResult(error="Authentication failed")
+    except TokenError as e:
+        logger.warning("WebSocket auth failed - Token error: %s", e)
+        return TokenValidationResult(error="Authentication failed")
+    except Exception as e:
+        logger.error("WebSocket auth failed - Unexpected decode error: %s", e)
+        return TokenValidationResult(error="Authentication failed")
+
+    jti = access_token.get("jti")
+
+    # 1. Cache blacklist check (BEFORE result cache). Fail-closed on cache
+    # errors via is_jti_blacklisted. Empty jti is also treated as blacklisted.
+    if is_jti_blacklisted(jti):
+        logger.warning("WebSocket auth denied - blacklisted access token jti=%s…", (jti or "")[:8])
+        return TokenValidationResult(error="Token has been revoked")
+
+    try:
+        # 2. Result cache lookup (ws_token_{hash})
+        cache_key = f"ws_token_{hash(token_string)}"
+        cached_user_id = cache.get(cache_key)
+
+        if cached_user_id:
+            try:
+                user = CustomUser.objects.get(id=cached_user_id, is_active=True)
+                return TokenValidationResult(user=user, is_valid=True)
+            except CustomUser.DoesNotExist:
+                cache.delete(cache_key)
+                # PR-3 Fix #1: prune from per-user set so invalidate doesn't
+                # try to delete a key that's already gone.
+                _untrack_token_for_user(cached_user_id, cache_key)
+
+        # 3. User lookup using the already-decoded token
+        user_id = access_token.get("user_id")
         if not user_id:
             return TokenValidationResult(error="Invalid token payload")
-        
-        # Check token expiration
-        exp = access_token.get('exp')
+
+        exp = access_token.get("exp")
         if exp and time.time() > exp:
             return TokenValidationResult(error="Token expired")
-        
-        # Check if token is blacklisted (via its jti)
-        # H-1 fail-closed: DB errors must deny, not allow revoked tokens.
-        jti = access_token.get('jti')
+
+        # 4. DB blacklist checks (OutstandingToken + BlacklistedToken).
+        # Fail-closed: DB errors deny, not allow.
         if jti:
             try:
                 outstanding = OutstandingToken.objects.filter(jti=jti).first()
                 if outstanding and BlacklistedToken.objects.filter(token=outstanding).exists():
                     return TokenValidationResult(error="Token has been revoked")
             except Exception as e:
-                logger.error(f"WebSocket blacklist check failed for jti={jti}: {e}")
+                logger.error("WebSocket blacklist check failed for jti=%s: %s", (jti or "")[:8], e)
                 return TokenValidationResult(error="Authentication failed")
-        
-        # Get user
-        user = CustomUser.objects.get(id=user_id, is_active=True)
-        
-        # Cache the result (cache for shorter than token lifetime)
-        cache_ttl = min(300, max(0, exp - time.time())) if exp else 300
-        cache.set(cache_key, user_id, int(cache_ttl))
-        # PR-3 Fix #1: track this cache key under the user so a blacklist
-        # can flush all of this user's cached tokens in one shot.
-        _track_token_for_user(user_id, cache_key, int(cache_ttl))
-        
-        return TokenValidationResult(user=user, is_valid=True)
-    
-    except InvalidToken as e:
-        logger.warning(f"WebSocket auth failed - Invalid token: {e}")
-        return TokenValidationResult(error="Invalid token")
-    
-    except TokenError as e:
-        logger.warning(f"WebSocket auth failed - Token error: {e}")
-        return TokenValidationResult(error=str(e))
-    
-    except CustomUser.DoesNotExist:
-        logger.warning(f"WebSocket auth failed - User not found or inactive")
-        return TokenValidationResult(error="User not found or inactive")
-    
+
+        try:
+            user = CustomUser.objects.get(id=user_id, is_active=True)
+        except CustomUser.DoesNotExist:
+            logger.warning("WebSocket auth failed - User %s not found or inactive", user_id)
+            return TokenValidationResult(error="User not found or inactive")
     except Exception as e:
-        logger.error(f"WebSocket auth failed - Unexpected error: {e}")
+        logger.error(
+            "WebSocket auth failed - post-decode error for jti=%s: %s",
+            (jti or "")[:8], e,
+        )
         return TokenValidationResult(error="Authentication failed")
+
+    # 5. Cache the result. TTL capped at 300s; empty/expired exp gets 300s.
+    # Neither write is a trust decision, so a failure here must not
+    # deny a user we already authenticated: log and carry on.
+    try:
+        cache_ttl = min(300, max(0, int(exp - time.time()))) if exp else 300
+        cache.set(cache_key, user_id, int(cache_ttl))
+    except Exception as e:
+        logger.warning("WebSocket result-cache write failed for jti=%s: %s", (jti or "")[:8], e)
+        return TokenValidationResult(user=user, is_valid=True)
+
+    # PR-3 Fix #1: track this cache key under the user so a blacklist
+    # can flush all of this user's cached tokens in one shot.
+    try:
+        _track_token_for_user(user_id, cache_key, int(cache_ttl))
+    except Exception as e:
+        logger.warning("WebSocket tracking write failed for jti=%s: %s", (jti or "")[:8], e)
+
+    return TokenValidationResult(user=user, is_valid=True)
 
 
 @database_sync_to_async
@@ -333,11 +294,11 @@ class JWTAuthMiddleware(BaseMiddleware):
         """
         from .proxies import get_client_ip as _resolve_ip
         return _resolve_ip(scope)
-    
+
     async def _check_rate_limit(self, client_ip):
         """Check if client has exceeded connection rate limit."""
         cache_key = f"ws_ratelimit_{client_ip}"
-        
+
         @database_sync_to_async
         def check_and_increment():
             current = cache.get(cache_key, 0)
@@ -345,7 +306,7 @@ class JWTAuthMiddleware(BaseMiddleware):
                 return False
             cache.set(cache_key, current + 1, self.RATE_LIMIT_WINDOW)
             return True
-        
+
         return await check_and_increment()
     
     async def _close_connection(self, send, code=4000, reason="Connection closed"):
@@ -360,16 +321,15 @@ class JWTAuthMiddleware(BaseMiddleware):
 # class JWTAuthMiddlewareStack:
 #     """
 #     Convenience wrapper to create the full middleware stack.
-    
+#
 #     Usage:
 #         application = ProtocolTypeRouter({
 #             'websocket': JWTAuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
 #         })
 #     """
-    
+#
 #     def __init__(self, inner):
 #         self.inner = JWTAuthMiddleware(inner)
-    
+#
 #     def __call__(self, scope):
 #         return self.inner(scope)
-

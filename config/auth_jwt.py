@@ -33,11 +33,11 @@ from typing import Optional, Tuple
 
 from rest_framework.request import Request
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.tokens import Token
 
 from .auth_cookies import ACCESS_COOKIE
-from django.core.cache import cache
+from .token_blacklist import is_jti_blacklisted
 
 
 class CookieJWTAuthentication(JWTAuthentication):
@@ -111,9 +111,10 @@ class CookieJWTAuthentication(JWTAuthentication):
         # table only tracks refresh tokens, so LogoutView additionally
         # writes the presented access token's jti to the cache for its
         # remaining lifetime. Enforce it here so the WS path and the
-        # HTTP path agree on what "logged out" means.
-        from .websocket_auth import _blacklist_key
-        if jti and cache.get(_blacklist_key(jti)):
+        # HTTP path agree on what "logged out" means. is_jti_blacklisted
+        # is fail-closed: cache errors return True and raise InvalidToken,
+        # and an empty/missing jti is denied exactly like on the WS path.
+        if is_jti_blacklisted(jti):
             raise InvalidToken("Token is blacklisted")
 
         return validated_token
