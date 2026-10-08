@@ -46,7 +46,7 @@ def _blacklist_user_tokens(user):
         try:
             BlacklistedToken.objects.get_or_create(token=token)
         except Exception:
-            pass
+            logger.exception("failed to blacklist token id=%s for user_id=%s", token.id, user.id)
 
 
 @method_decorator(ensure_csrf_cookie, name='create')
