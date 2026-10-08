@@ -318,18 +318,4 @@ class JWTAuthMiddleware(BaseMiddleware):
         })
 
 
-# class JWTAuthMiddlewareStack:
-#     """
-#     Convenience wrapper to create the full middleware stack.
-#
-#     Usage:
-#         application = ProtocolTypeRouter({
-#             'websocket': JWTAuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
-#         })
-#     """
-#
-#     def __init__(self, inner):
-#         self.inner = JWTAuthMiddleware(inner)
-#
-#     def __call__(self, scope):
-#         return self.inner(scope)
+

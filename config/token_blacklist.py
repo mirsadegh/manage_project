@@ -68,7 +68,7 @@ def blacklist_access_token(token_string: str) -> bool:
         # but the access token is still valid. Log immediately so an
         # operator can alert and the user's session is not silently
         # extended beyond their expectation.
-        logger.error(
+        logger.exception(
             "access-token blacklist: cache.set failed for jti=%s… "
             "(logout may not have revoked the session)",
             jti[:8],
