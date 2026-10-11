@@ -113,6 +113,27 @@ class UserDetailSerializer(BaseUserSerializer):
     """Detailed user serializer for retrieve and profile views."""
 
 
+class UserSelfUpdateSerializer(BaseUserSerializer):
+    """Allowlist of fields a user may edit about themselves.
+
+    Excludes admin-only or sensitive fields: ``role``, ``is_active``,
+    ``is_staff``, ``is_superuser``, ``date_joined``, ``is_available``.
+    Also excludes ``username`` (open question: self-service username
+    change has integrity implications) and ``phone_number``/``bio``
+    (frontend sends them but the backend has never persisted them).
+    ``email`` is included: self-edit is current behaviour; the account-
+    takeover-via-password-reset risk is an open question.
+    """
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'email', 'first_name', 'last_name',
+            'department', 'job_title',
+        )
+        read_only_fields = ('id', 'date_joined')
+
+
 class UserRegistrationSerializer(PasswordPairMixin, serializers.ModelSerializer):
     """Serializer for user registration."""
 

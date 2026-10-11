@@ -1,5 +1,6 @@
 from rest_framework import viewsets, generics, status, permissions
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.exceptions import NotAuthenticated, PermissionDenied, ValidationError
 import logging
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -16,9 +17,11 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.core.mail import send_mail
 from django.conf import settings
+from django.http import Http404
 from .models import CustomUser
 from .serializers import (
-    UserSerializer, UserDetailSerializer, UserRegistrationSerializer,
+    UserSerializer, UserDetailSerializer, UserSelfUpdateSerializer,
+    UserRegistrationSerializer,
     ChangePasswordSerializer, PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer, LogoutSerializer,
     CustomTokenObtainPairSerializer, UserPublicSerializer,
@@ -331,13 +334,19 @@ class UserViewSet(viewsets.ModelViewSet):
             'me': [permissions.IsAuthenticated],
             'change_password': [permissions.IsAuthenticated],
             'deactivate_account': [permissions.IsAuthenticated],
+            # OPTIONS (metadata) keeps the plain authenticated check.
+            'metadata': [permissions.IsAuthenticated],
             'create': [IsAdmin],
             'update': [IsAdmin],
             'partial_update': [IsAdmin],
             'destroy': [IsAdmin],
             'activate': [IsAdmin],
         }
-        permission_classes = permission_map.get(self.action, [permissions.IsAuthenticated])
+        # Deny-by-default: any action not listed above (e.g. a future
+        # action that forgot to register itself) falls back to IsAdmin
+        # instead of the old IsAuthenticated fallback, which granted
+        # every authenticated user access.
+        permission_classes = permission_map.get(self.action, [IsAdmin])
         return [permission() for permission in permission_classes]
 
     def _user_can_see_private(self, request, obj=None):
@@ -356,10 +365,20 @@ class UserViewSet(viewsets.ModelViewSet):
         # Owner can always see their own full profile.
         if obj is not None and obj == request.user:
             return True
-        if obj is None:
-            # No specific obj (e.g. /me/): always allow.
-            return True
+        # Non-privileged requester with no owner relationship: the
+        # caller must NOT see private data. (The previous `obj is None`
+        # early-return-True was fail-open and is deliberately removed.)
         return False
+
+    def get_object(self):
+        """Cache the resolved object so retrieve's serializer selection
+        and the mixin's own lookup issue a single query.
+        """
+        if getattr(self, '_object_cache', None) is not None:
+            return self._object_cache
+        obj = super().get_object()
+        self._object_cache = obj
+        return obj
 
     def get_serializer_class(self):
         # PR-4: list and retrieve return the public serializer to
@@ -370,12 +389,14 @@ class UserViewSet(viewsets.ModelViewSet):
             return UserDetailSerializer
         if self.action in ('list', 'retrieve'):
             request = self.request
-            obj = None
-            if self.action == 'retrieve':
+            obj = getattr(self, '_object_cache', None)
+            if obj is None and self.action == 'retrieve':
+                # Fail closed: a missing object or a permission denial
+                # must never upgrade the response to UserDetailSerializer.
                 try:
                     obj = self.get_object()
-                except Exception:
-                    obj = None
+                except (Http404, PermissionDenied, NotAuthenticated):
+                    return UserPublicSerializer
             if self._user_can_see_private(request, obj):
                 return UserDetailSerializer
             return UserPublicSerializer
@@ -388,7 +409,7 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer = UserDetailSerializer(request.user)
             return Response(serializer.data)
 
-        serializer = UserDetailSerializer(
+        serializer = UserSelfUpdateSerializer(
             request.user,
             data=request.data,
             partial=True
@@ -413,12 +434,12 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # PR-4 Fix M-5: blacklist other sessions before changing the
-        # password, so other devices must re-authenticate.
-        _blacklist_user_tokens(user)
-
+        # PR-4 Fix M-5: blacklist other sessions only AFTER the new
+        # password is persisted, so a failing save never leaves the
+        # user's other devices logged out of a half-changed account.
         user.set_password(serializer.validated_data['new_password'])
         user.save()
+        _blacklist_user_tokens(user)
 
         return Response({'message': 'Password updated successfully'})
 
@@ -438,6 +459,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 {'password': ['Wrong password.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if self._is_last_active_admin(request.user):
+            return Response(
+                {'detail': [
+                    'You are the last remaining active admin and cannot '
+                    'deactivate your account. Promote another admin first.'
+                ]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         request.user.is_active = False
         request.user.save()
@@ -446,6 +475,76 @@ class UserViewSet(viewsets.ModelViewSet):
         _blacklist_user_tokens(request.user)
 
         return Response({'message': 'Account deactivated successfully'})
+
+    @staticmethod
+    def _is_last_active_admin(user):
+        """True if ``user`` is an active admin and the only one left.
+
+        Prevents deleting, demoting or deactivating the last active
+        admin, which would lock everybody out of the admin surface
+        (there is no other way to grant ADMIN via the API).
+        """
+        if user.role != CustomUser.Role.ADMIN or not user.is_active:
+            return False
+        return not CustomUser.objects.filter(
+            role=CustomUser.Role.ADMIN,
+            is_active=True,
+        ).exclude(pk=user.pk).exists()
+
+    def perform_destroy(self, instance):
+        """Guard the hard delete before it runs.
+
+        - an admin cannot delete their own account through this
+          endpoint (use deactivate_account for self-service);
+        - the last active admin cannot be deleted.
+        The delete itself stays a hard delete (unchanged semantics).
+        """
+        if instance == self.request.user:
+            raise ValidationError({
+                'detail': (
+                    'You cannot delete your own account through this '
+                    'endpoint. Use the deactivate-account endpoint '
+                    'instead.'
+                )
+            })
+        # Unreachable over HTTP: the self-delete check above fires
+        # first, because reaching this branch requires a caller who is
+        # not the instance being deleted. Covered by tests that call
+        # perform_destroy directly.
+        if self._is_last_active_admin(instance):
+            raise ValidationError({
+                'detail': (
+                    'Cannot delete the last remaining active admin. '
+                    'Promote another admin first.'
+                )
+            })
+        super().perform_destroy(instance)
+
+    def perform_update(self, serializer):
+        """Refuse to demote or deactivate the last remaining active admin.
+
+        ``is_active`` is not a serializer field today, so the guard is
+        defense-in-depth: it also pins the invariant for a future
+        serializer that exposes it.
+        """
+        instance = serializer.instance
+        if self._is_last_active_admin(instance):
+            new_role = serializer.validated_data.get('role')
+            if new_role is not None and new_role != CustomUser.Role.ADMIN:
+                raise ValidationError({
+                    'detail': (
+                        'Cannot demote the last remaining active admin. '
+                        'Promote another admin first.'
+                    )
+                })
+            if serializer.validated_data.get('is_active') is False:
+                raise ValidationError({
+                    'detail': (
+                        'Cannot deactivate the last remaining active '
+                        'admin. Promote another admin first.'
+                    )
+                })
+        super().perform_update(serializer)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def activate(self, request, pk=None):
