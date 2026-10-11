@@ -33,8 +33,8 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Custom permissions based on action.
 
-        PR-4: list/retrieve now require admin/manager role. Reads from
-        the role context still work because the WebSocket and other
+        list/retrieve now require admin/manager role. Reads from the
+        role context still work because the WebSocket and other
         in-process consumers are unaffected; this only changes the
         HTTP API.
         """
@@ -60,7 +60,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def _user_can_see_private(self, request, obj=None):
-        """PR-4: helper to decide if the requester can see the full
+        """Decide if the requester can see the full
         UserDetailSerializer (email/phone/bio/last_login). True for
         admin/manager, or the user viewing their own record.
         """
@@ -91,7 +91,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        # PR-4: list and retrieve return the public serializer to
+        # list and retrieve return the public serializer to
         # non-privileged callers; admin/manager get the full
         # UserDetailSerializer. The /me/ endpoint always returns
         # UserDetailSerializer (caller is the owner).
@@ -144,8 +144,8 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # PR-4 Fix M-5: blacklist other sessions only AFTER the new
-        # password is persisted, so a failing save never leaves the
+        # Blacklist other sessions only AFTER the new password is
+        # persisted, so a failing save never leaves the
         # user's other devices logged out of a half-changed account.
         user.set_password(serializer.validated_data['new_password'])
         user.save()
@@ -181,7 +181,7 @@ class UserViewSet(viewsets.ModelViewSet):
         request.user.is_active = False
         request.user.save()
 
-        # PR-4: use the shared helper instead of inlining.
+        # Invalidate other sessions after deactivation.
         _blacklist_user_tokens(request.user)
 
         return Response({'message': 'Account deactivated successfully'})

@@ -11,7 +11,7 @@ logger = logging.getLogger('accounts')
 
 
 def _blacklist_user_tokens(user):
-    """PR-4: helper — blacklist all outstanding refresh tokens for a user.
+    """Helper — blacklist all outstanding refresh tokens for a user.
 
     Called on password change, password reset, and account deactivation
     so other-device sessions are forced to re-authenticate. Errors on

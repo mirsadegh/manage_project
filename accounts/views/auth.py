@@ -42,7 +42,7 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = UserRegistrationSerializer
-    # PR-4 M-1: cap registration to 5/hour per IP to deter mass-signup abuse.
+    # Cap registration to 5/hour per IP to deter mass-signup abuse.
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'registration'
 
@@ -51,22 +51,26 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # PR-4 L-2 (intentional): return access + refresh tokens here so
-        # the user is auto-logged-in after registration. The frontend
-        # benefits from fewer round-trips; the trade-off is a 7-day
-        # refresh token created without an explicit consent step.
-        # Documented as an accepted risk; revisit if user feedback
-        # changes.
+        # Return access + refresh tokens in the body so the user is
+        # auto-logged-in after registration. The frontend benefits
+        # from fewer round-trips; the trade-off is a 7-day refresh
+        # token created without an explicit consent step. Documented
+        # as an accepted risk; revisit if user feedback changes.
+        # Also set the tokens as HttpOnly cookies so the WebSocket
+        # upgrade can authenticate without ?token=. The token values
+        # are NOT returned in the JSON body; they are XSS-theft-prone
+        # and the cookie is the auth channel. Set
+        # RETURN_TOKENS_IN_BODY=true to restore body tokens for legacy
+        # tooling/debugging.
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
         refresh_str = str(refresh)
 
-        # PR-6: also set the tokens as HttpOnly cookies so the
-        # WebSocket upgrade can authenticate without ?token=. M-2: the
-        # token values are NOT returned in the JSON body; they are
-        # XSS-theft-prone and the cookie is the auth channel. Set
+        # Also set the tokens as HttpOnly cookies so the WebSocket
+        # upgrade can authenticate without ?token=. The token values
+        # are NOT returned in the JSON body; they are XSS-theft-prone
+        # and the cookie is the auth channel. Set
         # RETURN_TOKENS_IN_BODY=true to restore body tokens for legacy
-        # tooling/debugging.
         response = Response({
             'message': 'Registration successful',
             'user': {
@@ -91,7 +95,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     Custom login view with rate limiting.
     The throttle is applied at the view level to ensure it works correctly.
 
-    PR-6: on a successful login, the access and refresh tokens are also
+    On a successful login, the access and refresh tokens are also
     set as HttpOnly cookies so the WebSocket upgrade can authenticate
     without ?token=. The JSON body still contains the tokens for
     backward compatibility with existing tools.
@@ -111,7 +115,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 access=response.data.get('access'),
                 refresh=response.data.get('refresh'),
             )
-            # M-2: tokens stay in HttpOnly cookies only unless the
+            # Tokens stay in HttpOnly cookies only unless the
             # legacy body-mode env flag is set.
             if not settings.RETURN_TOKENS_IN_BODY:
                 response.data.pop('access', None)
@@ -124,9 +128,9 @@ class LogoutView(APIView):
     Logout endpoint that blacklists the refresh token.
     Supports both single token logout and logout from all devices.
 
-    PR-6: also clears the auth cookies so the browser drops them.
-    The force_disconnect signal (PR-3 Fix #1) closes any open WS
-    connections immediately.
+    Also clears the auth cookies so the browser drops them. The
+    force_disconnect signal closes any open WebSocket connections
+    immediately.
 
     Access-token blacklist: SimpleJWT's OutstandingToken table only
     tracks refresh tokens, so without this the ws_access cookie would
@@ -172,8 +176,7 @@ class LogoutView(APIView):
                     "user_id=%s; token may remain valid beyond expected TTL",
                     request.user.id,
                 )
-            # PR-4: shared helper. Runs after the access token so the
-            # signal it triggers sees the jti already revoked.
+            # Runs after the access token so the signal it triggers
             _blacklist_user_tokens(request.user)
             response = Response({'message': 'Successfully logged out from all devices'})
             clear_auth_cookies(response)
@@ -227,8 +230,8 @@ class PasswordResetRequestView(APIView):
 
         email = serializer.validated_data['email']
 
-        # PR-4 M-3: never raise from this endpoint. SMTP failure must not
-        # leak which email exists (would be an enumeration oracle). Log
+        # Never raise from this endpoint. SMTP failure must not leak
+        # which email exists (would be an enumeration oracle). Log
         # the error and always return 200 with the generic message.
         try:
             user = User.objects.get(email=email)
@@ -289,7 +292,7 @@ class PasswordResetConfirmView(APIView):
         user.set_password(new_password)
         user.save()
 
-        # PR-4: use the shared helper to invalidate other sessions.
+        # Invalidate other sessions after the password change.
         _blacklist_user_tokens(user)
 
         return Response({'message': 'Password has been reset successfully'})
@@ -299,9 +302,8 @@ class PasswordResetConfirmView(APIView):
 class CookieTokenRefreshView(TokenRefreshView):
     """
     Token refresh endpoint that re-issues HttpOnly cookies.
-
-    PR-6: when the request arrives with the `ws_refresh` cookie (set
-    on login), we read the refresh token from the cookie and use it to
+    When the request arrives with the `ws_refresh` cookie (set on
+    login), we read the refresh token from the cookie and use it to
     rotate. We then set the new access (and rotated refresh) cookies
     on the response. The JSON body still includes the new tokens so
     client code that reads the body keeps working.
