@@ -1,13 +1,8 @@
 """
-PR-4 Commit 1 regression tests.
+Regression tests for user API security.
 
-Covers:
-  H-1 / H-2 / H-3: UserViewSet.get_permissions
-  H-4: UserPublicSerializer excludes sensitive fields
-  M-4: deactivated users (is_active=False) are denied
-  M-5: change_password and deactivate_account invalidate tokens
-  M-6: JWT _user_claims does NOT include email
-  H-5: _blacklist_user_tokens helper
+Covers permission checks, serializer privacy, token invalidation,
+deactivated-user denial, and JWT payload privacy.
 """
 import pytest
 from django.contrib.auth import get_user_model
@@ -86,12 +81,12 @@ def _login(client, user):
 
 
 # ---------------------------------------------------------------------------
-# Authorization tests (H-1 / H-2 / H-3)
+# Authorization tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_developer_list_users_returns_403(dev_user, api_client):
-    """H-1: a developer is denied the list endpoint."""
+    """A developer is denied the list endpoint."""
     api_client.force_authenticate(user=dev_user)
     response = api_client.get(_user_list_url())
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -99,7 +94,7 @@ def test_developer_list_users_returns_403(dev_user, api_client):
 
 @pytest.mark.django_db
 def test_admin_list_users_returns_200(admin_user, api_client):
-    """H-1: admin can list users."""
+    """An admin can list users."""
     api_client.force_authenticate(user=admin_user)
     response = api_client.get(_user_list_url())
     assert response.status_code == status.HTTP_200_OK
@@ -107,7 +102,7 @@ def test_admin_list_users_returns_200(admin_user, api_client):
 
 @pytest.mark.django_db
 def test_pm_list_users_returns_200(api_client):
-    """H-1: project manager (PM) can list users (IsAdminOrManager)."""
+    """A project manager (PM) can list users."""
     pm = _make_user(User.Role.PROJECT_MANAGER)
     api_client.force_authenticate(user=pm)
     response = api_client.get(_user_list_url())
@@ -116,7 +111,7 @@ def test_pm_list_users_returns_200(api_client):
 
 @pytest.mark.django_db
 def test_tl_list_users_returns_200(api_client):
-    """H-1: team lead (TL) can list users (IsAdminOrManager)."""
+    """A team lead (TL) can list users."""
     tl = _make_user(User.Role.TEAM_LEAD)
     api_client.force_authenticate(user=tl)
     response = api_client.get(_user_list_url())
@@ -125,7 +120,7 @@ def test_tl_list_users_returns_200(api_client):
 
 @pytest.mark.django_db
 def test_developer_retrieve_other_user_returns_403(dev_user, api_client):
-    """H-2: a developer cannot retrieve another user's detail."""
+    """A developer cannot retrieve another user's detail."""
     other = _make_user(User.Role.DEVELOPER, username='other_dev')
     api_client.force_authenticate(user=dev_user)
     response = api_client.get(_user_detail_url(other.id))
@@ -134,7 +129,7 @@ def test_developer_retrieve_other_user_returns_403(dev_user, api_client):
 
 @pytest.mark.django_db
 def test_admin_retrieve_user_returns_200(admin_user, api_client):
-    """H-2: admin can retrieve any user."""
+    """An admin can retrieve any user."""
     other = _make_user(User.Role.DEVELOPER, username='other_dev2')
     api_client.force_authenticate(user=admin_user)
     response = api_client.get(_user_detail_url(other.id))
@@ -151,12 +146,12 @@ def test_developer_me_returns_200(dev_user, api_client):
 
 
 # ---------------------------------------------------------------------------
-# Serializer tests (H-4)
+# Serializer tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_public_serializer_excludes_sensitive_fields():
-    """H-4: UserPublicSerializer must not include sensitive fields."""
+    """UserPublicSerializer must not include sensitive fields."""
     from accounts.serializers import UserPublicSerializer
 
     fields = set(UserPublicSerializer.Meta.fields)
@@ -189,13 +184,13 @@ def test_admin_detail_includes_email(admin_user, api_client):
 
 
 # ---------------------------------------------------------------------------
-# JWT tests (M-6)
+# JWT tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_jwt_login_response_payload_excludes_email(api_client):
     """
-    M-6: the login endpoint's response shape drops email from the
+    The login endpoint's response shape drops email from the
     user-data sub-dict. The /me/ endpoint is the canonical way to
     fetch email.
     """
@@ -213,16 +208,16 @@ def test_jwt_login_response_payload_excludes_email(api_client):
 @pytest.mark.django_db
 def test_jwt_access_token_payload_excludes_email(api_client):
     """
-    M-6 (token): the access JWT issued by the project serializer
-    contains username and role but no email claim. We decode the
-    token from the login response and inspect its payload.
+    The access JWT issued by the project serializer contains
+    username and role but no email claim. We decode the token from
+    the login response and inspect its payload.
     """
     user = _make_user(User.Role.DEVELOPER, username='jwt_user2')
     response = _login(api_client, user)
     assert response.status_code == status.HTTP_200_OK
-    # M-2: the access token is no longer in the JSON body by default;
+    # The access token is no longer in the JSON body by default;
     # it is delivered exclusively via the HttpOnly ws_access cookie.
-    # READ_TOKENS_IN_BODY legacy flag restores the body token.
+    # RETURN_TOKENS_IN_BODY legacy flag restores the body token.
     from django.conf import settings
     from config.auth_cookies import ACCESS_COOKIE
     if settings.RETURN_TOKENS_IN_BODY:
@@ -242,12 +237,12 @@ def test_jwt_access_token_payload_excludes_email(api_client):
 
 
 # ---------------------------------------------------------------------------
-# Token invalidation tests (M-5, H-5)
+# Token invalidation tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_change_password_invalidates_tokens():
-    """M-5: change_password blacklists all outstanding tokens."""
+    """change_password blacklists all outstanding tokens."""
     user = _make_user(User.Role.DEVELOPER, username='cp_user')
     refresh = RefreshToken.for_user(user)
     OutstandingToken.objects.get_or_create(
@@ -334,7 +329,7 @@ def test_deactivate_non_last_admin_allowed():
 
 @pytest.mark.django_db
 def test_password_reset_confirm_invalidates_tokens():
-    """H-5 / M-5: password-reset-confirm blacklists all tokens."""
+    """password-reset-confirm blacklists all tokens."""
     from django.contrib.auth.tokens import default_token_generator
     from django.utils.http import urlsafe_base64_encode
     from django.utils.encoding import force_bytes
@@ -369,12 +364,12 @@ def test_password_reset_confirm_invalidates_tokens():
 
 
 # ---------------------------------------------------------------------------
-# Deactivated-user permission tests (M-4)
+# Deactivated-user permission tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_deactivated_admin_denied_on_list():
-    """M-4: admin with is_active=False is denied by IsAdminOrManager."""
+    """An admin with is_active=False is denied by IsAdminOrManager."""
     admin = _make_user(User.Role.ADMIN, username='dead_admin', is_active=False)
 
     api_client = APIClient()
@@ -385,7 +380,7 @@ def test_deactivated_admin_denied_on_list():
 
 @pytest.mark.django_db
 def test_deactivated_pm_denied_on_list():
-    """M-4: PM with is_active=False is denied by IsAdminOrManager."""
+    """A PM with is_active=False is denied by IsAdminOrManager."""
     pm = _make_user(User.Role.PROJECT_MANAGER, username='dead_pm', is_active=False)
 
     api_client = APIClient()
@@ -396,7 +391,7 @@ def test_deactivated_pm_denied_on_list():
 
 @pytest.mark.django_db
 def test_deactivated_admin_cannot_activate_user():
-    """M-4: a deactivated admin can't run admin-only actions."""
+    """A deactivated admin can't run admin-only actions."""
     admin = _make_user(User.Role.ADMIN, username='dead_adm2', is_active=False)
     target = _make_user(
         User.Role.DEVELOPER, username='inactive_target', is_active=False,

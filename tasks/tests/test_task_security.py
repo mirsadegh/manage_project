@@ -1,14 +1,14 @@
 # tasks/tests/test_task_security.py
 """
-Regression tests for PR-4 Commit 4 security fixes.
+Regression tests for security fixes.
 
 Covers:
-- T-1: Task list no longer leaks tasks from non-member projects via
+- Task list no longer leaks tasks from non-member projects via
        assignee/created_by clauses
-- T-2: TaskViewSet.assign requires project membership
-- T-3: TaskViewSet.bulk_assign scoped to accessible projects
-- T-4: TaskLabelViewSet scoped + membership check on create
-- T-5: TaskListViewSet scoped + membership check on create
+- TaskViewSet.assign requires project membership
+- TaskViewSet.bulk_assign scoped to accessible projects
+- TaskLabelViewSet scoped + membership check on create
+- TaskListViewSet scoped + membership check on create
 """
 import pytest
 from django.urls import reverse
@@ -91,10 +91,10 @@ def _task_list(response_json):
     return response_json.get('tasks', response_json.get('results', []))
 
 
-# ─── T-1: list does not leak tasks across project boundaries ───
+# ─── : list does not leak tasks across project boundaries ───
 
 class TestTaskListBOLA:
-    """T-1: assignee/created_by must not leak tasks from non-member projects."""
+    """: assignee/created_by must not leak tasks from non-member projects."""
 
     def test_non_member_cannot_list_tasks_from_assignee(
         self, api_client, outsider, project, task_list, owner,
@@ -132,7 +132,7 @@ class TestTaskListBOLA:
 
 
 class TestMyTasksEndpoint:
-    """T-1: my_tasks surfaces tasks where the user is assignee or creator."""
+    """: my_tasks surfaces tasks where the user is assignee or creator."""
 
     def test_my_tasks_shows_assignee_tasks(
         self, api_client, member, project, task_list, owner,
@@ -170,10 +170,10 @@ class TestMyTasksEndpoint:
         assert 'Test Task' not in titles
 
 
-# ─── T-2: assign requires project membership ───
+# ─── : assign requires project membership ───
 
 class TestAssignMembership:
-    """T-2: only project members (or admin/PM) may assign tasks."""
+    """: only project members (or admin/PM) may assign tasks."""
 
     def test_assign_requires_project_membership(
         self, api_client, outsider, task, member,
@@ -203,7 +203,7 @@ class TestAssignMembership:
         self, api_client, owner, task, member,
     ):
         # owner is the project owner with PM role - passes CanReassignTask
-        # and the T-2 in-view check.
+        # and the in-view check.
         api_client.force_authenticate(user=owner)
         response = api_client.post(
             reverse('task-assign', kwargs={'pk': task.id}),
@@ -213,15 +213,15 @@ class TestAssignMembership:
         assert response.status_code == status.HTTP_200_OK
 
 
-# ─── T-3: bulk_assign scoped to accessible projects ───
+# ─── : bulk_assign scoped to accessible projects ───
 
 class TestBulkAssignScoping:
-    """T-3: bulk_assign only affects tasks in projects the caller can access."""
+    """: bulk_assign only affects tasks in projects the caller can access."""
 
     def test_bulk_assign_scoped_to_accessible_projects(
         self, api_client, project, task_list, owner, admin_user,
     ):
-        # TL role passes the @require_role decorator; with T-3 the
+        # TL role passes the @require_role decorator; with the
         # queryset is filtered to projects TL is a member of.
         tl_user = User.objects.create_user(
             username='tl_user', email='tl@example.com',
@@ -258,10 +258,10 @@ class TestBulkAssignScoping:
         assert task.assignee_id == member.id
 
 
-# ─── T-4: TaskLabelViewSet scoped + membership check ───
+# ─── : TaskLabelViewSet scoped + membership check ───
 
 class TestTaskLabelAccess:
-    """T-4: labels listable only in accessible projects; create requires membership."""
+    """: labels listable only in accessible projects; create requires membership."""
 
     def test_label_list_scoped_to_accessible_projects(
         self, api_client, outsider, project,
@@ -299,10 +299,10 @@ class TestTaskLabelAccess:
         ).exists()
 
 
-# ─── T-5: TaskListViewSet scoped + membership check ───
+# ─── : TaskListViewSet scoped + membership check ───
 
 class TestTaskListAccess:
-    """T-5: task lists scoped to accessible projects; create requires membership."""
+    """: task lists scoped to accessible projects; create requires membership."""
 
     def test_tasklist_list_scoped_to_accessible_projects(
         self, api_client, outsider, project, owner,

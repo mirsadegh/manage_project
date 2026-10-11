@@ -1,6 +1,6 @@
 # notifications/tests/test_notification_security.py
 """
-Regression tests for PR-5 Commit 1: close the mass notification spoofing
+Regression tests for commit 1: close the mass notification spoofing
 vulnerability (N-1: viewset locked down to read-only; N-2: serializer
 fields are all read-only).
 

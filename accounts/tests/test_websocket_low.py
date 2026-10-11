@@ -1,5 +1,5 @@
 """
-PR-3 Commit 4 regression tests.
+Commit 4 regression tests.
 
 Covers:
   #16 Defensive recipient check in notification_message

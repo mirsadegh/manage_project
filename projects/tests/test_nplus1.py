@@ -1,6 +1,6 @@
 # projects/tests/test_nplus1.py
 """
-Regression test for H-3: N+1 query in project list serializer.
+Regression test for : N+1 query in project list serializer.
 
 Bug: ProjectSerializer used ReadOnlyField for total_tasks, completed_tasks,
 comment_count, and attachment_count, which called model properties for each
@@ -92,7 +92,7 @@ def multiple_projects(owner):
 
 
 class TestProjectListNPlus1Fix:
-    """H-3: Verify project list doesn't cause N+1 queries."""
+    """: Verify project list doesn't cause N+1 queries."""
 
     def test_project_list_returns_correct_counts(self, api_client, owner, project_with_tasks):
         """Verify counts are correct after N+1 fix."""

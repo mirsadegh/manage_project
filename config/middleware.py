@@ -21,8 +21,8 @@ class PermissionLoggingMiddleware(MiddlewareMixin):
     
     def get_client_ip(self, request):
         """Get client's IP address, honoring X-Forwarded-For only from
-        trusted proxies (PR-3 Fix #9). Delegates to the WS proxy helper,
-        building an ASGI-style scope from the Django request.
+        trusted proxies. Delegates to the WS proxy helper, building an
+        ASGI-style scope from the Django request.
         """
         from .proxies import get_client_ip as _resolve
         scope = {

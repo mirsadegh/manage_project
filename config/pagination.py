@@ -48,7 +48,7 @@ class ProjectPagination(PageNumberPagination):
     max_page_size = 50
     
     def get_paginated_response(self, data):
-        # M-4: unified envelope -- standard top-level shape matching
+        # Unified envelope -- standard top-level shape matching
         # StandardResultsSetPagination. Data under 'results' (not 'projects').
         return Response(OrderedDict([
             ('count', self.page.paginator.count),
@@ -98,7 +98,7 @@ class TaskPagination(PageNumberPagination):
             (stats['completed_tasks'] / stats['total_tasks']) * 100
         ) if stats['total_tasks'] else 0
 
-        # M-4: unified envelope -- pagination keys are top-level to match
+        # Unified envelope -- pagination keys are top-level to match
         # StandardResultsSetPagination; statistics stay as a sibling key.
         return Response(OrderedDict([
             ('count', self.page.paginator.count),

@@ -189,7 +189,7 @@ class TestNotificationActions:
     def test_get_preferences(self, authenticated_client):
         """Test getting user's notification preferences"""
         user = UserFactory()
-        # Use distinct notification_type values (M-1 added unique_together)
+        # Use distinct notification_type values (unique_together was added)
         for n_type in ('MENTION', 'COMMENT', 'ASSIGNMENT'):
             NotificationPreferenceFactory(user=user, notification_type=n_type)
         authenticated_client.force_authenticate(user=user)

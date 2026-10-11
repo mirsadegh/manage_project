@@ -1,5 +1,5 @@
 """
-PR-3 Commit 3 regression tests.
+Commit 3 regression tests.
 
 Covers:
   #10 Server-side idle timeout

@@ -72,7 +72,7 @@ class TestUserAuthentication:
         response = api_client.post(login_url, data)
         
         assert response.status_code == status.HTTP_200_OK
-        # M-2: tokens are set as HttpOnly cookies only. When
+        # Tokens are set as HttpOnly cookies only. When
         # RETURN_TOKENS_IN_BODY is False (the default), the JSON body
         # must NOT carry access/refresh tokens -- that is an XSS-theft
         # surface. When the legacy flag is enabled, body tokens remain
@@ -128,9 +128,9 @@ class TestUserPermissions:
         assert response.status_code == status.HTTP_200_OK
 
     def test_developer_cannot_list_users(self, dev_client, user_list_url):
-        """PR-4 H-1: developers MUST NOT list all users (would leak emails).
+        """Developers MUST NOT list all users (would leak emails).
 
-        The pre-PR-4 behavior allowed any authenticated user to list every
+        Before this fix, any authenticated user could list every
         account, which was a mass-user-enumeration vulnerability. This
         test is kept (renamed) to lock in the secure default.
         """

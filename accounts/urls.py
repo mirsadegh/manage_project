@@ -17,9 +17,7 @@ router.register(r'users', UserViewSet, basename='user')
 urlpatterns = [
     # JWT Authentication
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    # PR-6: CookieTokenRefreshView re-issues HttpOnly cookies so a
-    # refreshed token is automatically picked up by the WebSocket
-    # upgrade on the next reconnect.
+    # CookieTokenRefreshView re-issues HttpOnly cookies so a
     path('auth/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('auth/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('auth/logout/', LogoutView.as_view(), name='logout'),

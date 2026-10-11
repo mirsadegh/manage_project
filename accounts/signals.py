@@ -3,11 +3,11 @@
 """
 WS-side hooks for the accounts app.
 
-PR-3 Fix #1: when a JWT is blacklisted, close all live WS connections for
-that user (force_disconnect) and flush the cached token mappings.
+When a JWT is blacklisted, close all live WS connections for that user
+(force_disconnect) and flush the cached token mappings.
 
-PR-3 Fix #15: when a user is deactivated (is_active=False), do the same —
-close live WS and flush caches.
+When a user is deactivated (is_active=False), do the same — close live
+WS and flush caches.
 
 Wired in accounts.apps.AccountsConfig.ready().
 """
@@ -57,7 +57,7 @@ def force_disconnect_on_token_blacklist(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender='accounts.CustomUser')
 def flush_user_cache_on_deactivation(sender, instance, created, update_fields=None, **kwargs):
-    """PR-3 Fix #15: when a user is deactivated, close all live WS
+    """When a user is deactivated, close all live WS
     connections and flush cached token entries.
     """
     if instance.is_active:

@@ -375,7 +375,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 {'error': '⚠️ project_id is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        # TM-1: Verify caller has access to the project before assigning
+        # Verify caller has access to the project before assigning
         from projects.models import Project, ProjectMember as _PM
         try:
             project = Project.objects.get(id=project_id)
@@ -460,7 +460,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # TM-2: validate all attendee_ids are active team members
+        # validate all attendee_ids are active team members
         attendee_ids = request.data.get('attendee_ids', [])
         if attendee_ids:
             valid = set(

@@ -1,7 +1,7 @@
 """
 Cookie-aware JWT authentication for DRF.
 
-PR-6 made HttpOnly cookies the source of truth for the React frontend
+Cookie-based JWT auth is the source of truth for the React frontend
 (`ws_access` for the access token, `ws_refresh` for the refresh token).
 Stock `rest_framework_simplejwt.authentication.JWTAuthentication` only
 reads the `Authorization: Bearer <token>` header, so once the browser
@@ -72,7 +72,7 @@ class CookieJWTAuthentication(JWTAuthentication):
                 validated_token = self.get_validated_token(raw_token)
                 return self.get_user(validated_token), validated_token
 
-        # 2. HttpOnly cookie (the PR-6 path for browser SPAs).
+        # 2. HttpOnly cookie (the browser path).
         raw_token = request.COOKIES.get(ACCESS_COOKIE)
         if not raw_token:
             # No credentials anywhere → DRF will fall through to

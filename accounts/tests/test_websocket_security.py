@@ -1,5 +1,5 @@
 """
-PR-3 Commit 1 regression tests.
+Commit 1 regression tests.
 
 Covers the three Critical fixes:
   #1 Logout/Revocation Gap

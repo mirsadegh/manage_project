@@ -1,6 +1,6 @@
 # tasks/tests/test_pagination_stats.py
 """
-Regression tests for H-2: TaskPagination global stats bug.
+Regression tests for TaskPagination global stats bug.
 
 Bug: get_paginated_response() aggregated over the entire unfiltered Task
 table, so requesting tasks filtered by ?project=X returned site-wide
@@ -61,10 +61,10 @@ def _make_task(project, task_list, title, status='TODO'):
     )
 
 
-# ─── H-2: statistics must respect the filtered queryset ───
+# ───statistics must respect the filtered queryset ───
 
 class TestPaginationStatsScoping:
-    """H-2: stats must reflect the filtered queryset, not the global Task table."""
+    """: stats must reflect the filtered queryset, not the global Task table."""
 
     def test_stats_scoped_to_project_filter(self, api_client, owner, project_a, project_b):
         ProjectMember.objects.create(
@@ -145,7 +145,7 @@ class TestPaginationStatsScoping:
 
 
 class TestPaginationPayloadShape:
-    """H-2 cleanup: no duplicate 'tasks' key alongside 'results'."""
+    """cleanup: no duplicate 'tasks' key alongside 'results'."""
 
     def test_no_duplicate_tasks_key(self, api_client, owner, project_a):
         ProjectMember.objects.create(
@@ -164,7 +164,7 @@ class TestPaginationPayloadShape:
         assert 'results' in body
         assert 'tasks' not in body
         assert 'statistics' in body
-        # M-4: pagination keys are now top-level (not nested under 'pagination')
+        # pagination keys are now top-level (not nested under 'pagination')
         assert 'count' in body
         assert body['count'] == 1
         assert 'pagination' not in body

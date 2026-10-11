@@ -67,7 +67,7 @@ class ProjectConsumer(BaseConsumer):
             )
             await self.close(code=4003)
             return
-        # PR-3 Fix #3: per-user connection cap
+        # per-user connection cap
         # we don't burn a cap slot on a denied connection).
         if not await self._check_user_connection_cap():
             logger.warning(
@@ -78,7 +78,7 @@ class ProjectConsumer(BaseConsumer):
 
         self.project_id = project_info['id']
         self.group_name = f'project_{self.project_slug}'
-        # PR-3 Fix #1: control group for forced disconnect (token blacklist).
+        # control group for forced disconnect (token blacklist).
         self.control_group = f'user_{self.user.id}_ws_control'
         self.connected_at = timezone.now()
 
@@ -93,11 +93,11 @@ class ProjectConsumer(BaseConsumer):
             self.channel_name
         )
 
-        # PR-3 Fix #6: per-connection inbound rate limit.
+        # per-connection inbound rate limit.
         from config.websocket_throttle import _TokenBucket, DEFAULT_LIMIT_PER_SECOND, EXPENSIVE_LIMIT_PER_SECOND
         self._ws_default_bucket = _TokenBucket(DEFAULT_LIMIT_PER_SECOND)
         self._ws_expensive_bucket = _TokenBucket(EXPENSIVE_LIMIT_PER_SECOND)
-        # PR-3 Fix #10: start the idle-timeout watchdog.
+        # start the idle-timeout watchdog.
         self._ws_start_idle_watchdog()
 
         # Track online user
@@ -160,19 +160,19 @@ class ProjectConsumer(BaseConsumer):
                 self.channel_name
             )
         
-        # PR-3 Fix #1: leave the control group too.
+        # leave the control group too.
         if hasattr(self, 'control_group') and self.control_group:
             await self.channel_layer.group_discard(
                 self.control_group,
                 self.channel_name
             )
 
-        # PR-3 Fix #10: stop the idle-timeout watchdog.
+        # stop the idle-timeout watchdog.
         self._ws_cancel_idle_watchdog()
 
         if hasattr(self, 'user') and self.user and self.user.is_authenticated:
             await self._remove_online_user()
-            # PR-3 Fix #3: decrement per-user cap counter.
+            # decrement per-user cap counter.
             await self._release_user_connection_cap()
 
             connected_at = getattr(self, 'connected_at', None)
@@ -187,15 +187,15 @@ class ProjectConsumer(BaseConsumer):
             )
 
     async def force_disconnect(self, event):
-        """PR-3 Fix #1: server-initiated close on token blacklist."""
+        """server-initiated close on token blacklist."""
         reason = event.get('reason', 'force_disconnect')
         logger.info(f"Force-disconnecting project WS for user {self.user.id}: {reason}")
         await self.close(code=4001)
     async def receive(self, text_data):
         """Handle incoming messages from client."""
-        # PR-3 Fix #10: any inbound message resets the idle-timeout clock.
+        # any inbound message resets the idle-timeout clock.
         self._ws_touch_activity()
-        # PR-3 Fix #12: enforce MAX_MESSAGE_SIZE at the consumer layer
+        # enforce MAX_MESSAGE_SIZE at the consumer layer
         # before parsing. daphne already caps at 1 MiB; this is a tighter
         # cap to bound JSON parse cost and downstream broadcast size.
         from django.conf import settings as _dj_settings
@@ -216,7 +216,7 @@ class ProjectConsumer(BaseConsumer):
 
         message_type = data.get('type', '')
 
-        # PR-3 Fix #6: rate-limit inbound messages.
+        # rate-limit inbound messages.
         handler_for_type = {
             'ping': self._handle_ping,
             'typing_start': self._handle_typing_start,
@@ -288,7 +288,7 @@ class ProjectConsumer(BaseConsumer):
             }
         )
     
-    # PR-3 Fix #8: cap the position payload so a single client cannot
+    # cap the position payload so a single client cannot
     # use cursor_position as a broadcast amplifier.
     CURSOR_POSITION_MAX_BYTES = 4096
 
@@ -331,9 +331,9 @@ class ProjectConsumer(BaseConsumer):
     async def _handle_request_sync(self, data):
         """Request full project state sync.
 
-        PR-3 Fix #7: re-verify the user is still a project member before
+        re-verify the user is still a project member before
         serving the data. A revoked member who never disconnected could
-        otherwise pull the full project state.
+        # otherwise pull the full project state.
         """
         from projects.models import ProjectMember
         still_member = await self._still_project_member()
@@ -344,7 +344,7 @@ class ProjectConsumer(BaseConsumer):
             )
             await self.close(code=4003)
             return
-        # PR-3 Fix #11: optional `limit` (default 25, max 100) and `cursor`
+        # optional `limit` (default 25, max 100) and `cursor`
         # (task id) for paging. Without a cursor we cap at 25 to bound
         # the per-call DB cost. Pass `limit=100` only with `cursor`.
         limit = int(data.get('limit', 25))
@@ -436,14 +436,14 @@ class ProjectConsumer(BaseConsumer):
                 'element_id': event.get('element_id'),
             })
     
-    # PR-3 Fix #17: whitelist of allowed keys for user_focus broadcasts.
+    # whitelist of allowed keys for user_focus broadcasts.
     USER_FOCUS_ALLOWED_KEYS = frozenset({
         'task_id', 'is_focused', 'timestamp', 'user_id',
     })
 
     async def user_focus(self, event):
         """Handle user focus event from channel layer."""
-        # PR-3 Fix #17: drop any keys outside the whitelist before
+        # drop any keys outside the whitelist before
         # forwarding to the client. Untrusted producers (or buggy
         # in-app code) cannot inject extra fields like 'injected' or
         # 'admin_override'.
@@ -570,7 +570,7 @@ class ProjectConsumer(BaseConsumer):
     def _get_full_project_data(self, limit=25, cursor=None):
         """Get full project data for sync.
 
-        PR-3 Fix #11: limit defaults to 25 (was 100). With a `cursor`
+        limit defaults to 25 (was 100). With a `cursor`
         (task id), paging forward returns up to `limit` tasks after it.
         """
         from projects.models import Project
@@ -652,7 +652,7 @@ class ProjectConsumer(BaseConsumer):
 
     @database_sync_to_async
     def _check_user_connection_cap(self):
-        """PR-3 Fix #3: increment per-user counter; return False at cap."""
+        """increment per-user counter; return False at cap."""
         from django.conf import settings
         cap = getattr(settings, 'MAX_CONNECTIONS_PER_USER', 5)
         cache_key = f"ws_user_{self.user.id}_connections"
@@ -664,14 +664,14 @@ class ProjectConsumer(BaseConsumer):
 
     @database_sync_to_async
     def _release_user_connection_cap(self):
-        """PR-3 Fix #3: decrement per-user cap counter on disconnect."""
+        """decrement per-user cap counter on disconnect."""
         cache_key = f"ws_user_{self.user.id}_connections"
         current = cache.get(cache_key, 0)
         cache.set(cache_key, max(0, current - 1), 3600)
 
     @database_sync_to_async
     def _still_project_member(self):
-        """PR-3 Fix #7: re-check that the user still belongs to the project.
+        """re-check that the user still belongs to the project.
 
         Owners and admins keep access. Public projects are also fine.
         """

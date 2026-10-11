@@ -1,14 +1,14 @@
 # projects/tests/test_project_security.py
 """
-Regression tests for PR-4 Commit 3 security fixes.
+Regression tests for security fixes.
 
 Covers:
-- C-1: Project list no longer returns public projects to non-members
-- C-2: get_object raises 403 instead of 404 for unauthorized access
-- H-1: add_member blocks re-activation of users who left
-- H-2: ProjectSerializer uses UserPublicSerializer for owner/manager
-- M-1: remove_member returns 404 for inactive members
-- C-3: Removed nonexistent team.is_public reference (no more 500)
+- Project list no longer returns public projects to non-members
+- get_object raises 403 instead of 404 for unauthorized access
+- add_member blocks re-activation of users who left
+- ProjectSerializer uses UserPublicSerializer for owner/manager
+- remove_member returns 404 for inactive members
+- Removed nonexistent team.is_public reference (no more 500)
 """
 import pytest
 from django.urls import reverse
@@ -82,15 +82,15 @@ def private_project(owner):
 
 
 def _project_list(response_json):
-    """M-4: unified envelope -- data is always under 'results' now.
+    """Unified envelope -- data is always under 'results' now.
     Fallback to 'projects' only for backward-compat safety."""
     return response_json.get('results', response_json.get('projects', []))
 
 
-# ─── C-1: list does not enumerate public projects to non-members ───
+# ─── : list does not enumerate public projects to non-members ───
 
 class TestProjectListAccess:
-    """C-1: Non-members must not see public projects in list."""
+    """: Non-members must not see public projects in list."""
 
     def test_non_member_cannot_list_public_projects(
         self, api_client, outsider, public_project,
@@ -109,10 +109,10 @@ class TestProjectListAccess:
         assert 'member-project' in slugs
 
 
-# ─── C-2: get_object returns 403 for unauthorized access ───
+# ─── : get_object returns 403 for unauthorized access ───
 
 class TestProjectObjectAccess:
-    """C-2: get_object raises 403 for unauthorized, 404 for nonexistent."""
+    """: get_object raises 403 for unauthorized, 404 for nonexistent."""
 
     def test_non_member_get_403_on_private_project(
         self, api_client, outsider, private_project,
@@ -150,10 +150,10 @@ class TestProjectObjectAccess:
         assert response.status_code == status.HTTP_200_OK
 
 
-# ─── H-1 + M-1: membership guards ───
+# ─── membership guards ───
 
 class TestMembershipManagement:
-    """H-1 + M-1: membership re-activation and removal guards."""
+    """Membership re-activation and removal guards."""
 
     def test_add_member_blocks_reactivation_of_left_user(
         self, api_client, owner, private_project,
@@ -235,10 +235,10 @@ class TestMembershipManagement:
         assert not ProjectMember.objects.filter(id=membership.id).exists()
 
 
-# ─── H-2: ProjectSerializer uses UserPublicSerializer (no PII) ───
+# ───ProjectSerializer uses UserPublicSerializer (no PII) ───
 
 class TestProjectSerializerPII:
-    """H-2: owner/manager fields must not leak email/phone/bio."""
+    """Owner/manager fields must not leak email/phone/bio."""
 
     def test_project_list_owner_no_email(
         self, api_client, owner, public_project,
@@ -284,10 +284,10 @@ class TestProjectSerializerPII:
         assert 'bio' not in owner_data
 
 
-# ─── C-3: team detail no longer 500s for non-members ───
+# ─── : team detail no longer 500s for non-members ───
 
 class TestTeamPermissionFix:
-    """C-3: IsTeamMember no longer references nonexistent team.is_public."""
+    """: IsTeamMember no longer references nonexistent team.is_public."""
 
     def test_team_detail_non_member_no_500(
         self, api_client, owner, outsider,

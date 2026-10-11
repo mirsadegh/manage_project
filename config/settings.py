@@ -265,7 +265,7 @@ CORS_ALLOW_CREDENTIALS = True
 # REST Framework Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        # PR-6: CookieJWTAuthentication reads the `ws_access` HttpOnly
+        # CookieJWTAuthentication reads the `ws_access` HttpOnly
         # cookie (the browser path) AND the Authorization header
         # (backwards compat for API clients/tools). It also enforces
         # the SimpleJWT blacklist, so revoked tokens stop working on
@@ -300,10 +300,10 @@ REST_FRAMEWORK = {
         'project_creation': '10/hour',
         'task_creation': '50/hour',
         'password_reset': '5/hour',
-        # PR-4 M-1: cap anonymous user self-registration to deter
+        # Cap anonymous user self-registration to deter
         # mass-signup abuse.
         'registration': '5/hour',
-        # PR-5 L-2: rate limit notification read endpoints to deter
+        # Rate limit notification read endpoints to deter
         # polling-based privacy inference (detecting new notifications
         # in real time).
         'notification_read': '100/min',
@@ -410,7 +410,7 @@ WEBSOCKET_SETTINGS = {
     'RATE_LIMIT_WINDOW': 60,
 }
 
-# PR-3 Fix #2: trusted-proxy allowlist for X-Forwarded-For.
+# Trusted-proxy allowlist for X-Forwarded-For.
 # Comma-separated list of CIDRs. Empty (default) means no proxy is trusted;
 # the immediate peer address is used as the client IP. In production set this
 # to the CIDR of your reverse proxy (e.g. nginx, ALB).
@@ -418,7 +418,7 @@ TRUSTED_PROXY_CIDRS = [
     cidr.strip() for cidr in os.getenv('TRUSTED_PROXY_CIDRS', '').split(',') if cidr.strip()
 ]
 
-# PR-6: cookie-based JWT auth (preferred channel for WebSockets).
+# Cookie-based JWT auth (preferred channel for WebSockets).
 # The actual cookie name constants live in `config.auth_cookies`. The
 # settings below control the production-only hardening. In development
 # (DEBUG=True) the cookies are non-Secure so the browser will send them
@@ -430,11 +430,11 @@ AUTH_COOKIE_SAMESITE = os.getenv('AUTH_COOKIE_SAMESITE', 'Lax')
 # /ws/... requests alike.
 AUTH_COOKIE_PATH = '/'
 
-# PR-3 Fix #3: per-user WebSocket connection cap. Enforced in NotificationConsumer
+# Per-user WebSocket connection cap. Enforced in NotificationConsumer
 # and ProjectConsumer connect(). The close code 4028 is used when exceeded.
 MAX_CONNECTIONS_PER_USER = int(os.getenv('MAX_CONNECTIONS_PER_USER', '5'))
 
-# PR-3 Fix #12: max inbound WebSocket message size, in bytes. Frames larger
+# Max inbound WebSocket message size, in bytes. Frames larger
 # than this are rejected with WS close code 4009. daphne's default is 1 MiB
 # (1048576); we default to 64 KiB which is plenty for JSON control messages.
 MAX_MESSAGE_SIZE = int(os.getenv('WS_MAX_MESSAGE_SIZE', '65536'))
@@ -517,8 +517,8 @@ if USE_FILE_LOGGING:
 # Debug Toolbar (Development only)
 INTERNAL_IPS = ['127.0.0.1', 'localhost']
 
-# M-2: tokens returned in the JSON body of login/register/refresh responses
-# are an XSS-theft surface that defeats the PR-6 HttpOnly-cookie auth model.
+# Tokens returned in the JSON body of login/register/refresh responses
+# are an XSS-theft surface that defeats the HttpOnly-cookie auth model.
 # Default OFF; clients authenticate via cookies only. Enable explicitly
 # (RETURN_TOKENS_IN_BODY=true) only for legacy tooling or debugging.
 RETURN_TOKENS_IN_BODY = os.getenv('RETURN_TOKENS_IN_BODY', 'false').lower() == 'true'

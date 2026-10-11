@@ -1,7 +1,7 @@
 # config/websocket_throttle.py
 
 """
-PR-3 Fix #6: per-connection inbound message rate limit.
+Per-connection inbound message rate limit.
 
 A single open WebSocket connection can otherwise fire an unbounded number
 of messages. With a broadcast amplifier like cursor_position in

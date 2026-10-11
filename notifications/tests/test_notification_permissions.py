@@ -1,11 +1,11 @@
 # notifications/tests/test_notification_permissions.py
 """
-Regression tests for PR-5 Commit 2 fixes.
+Regression tests for commit 2 fixes.
 
 Covers:
-- H-1: NotificationTemplateViewSet is admin-only (IsAdmin permission)
-- M-1: NotificationPreference unique_together on (user, notification_type)
-- M-2: IsNotificationRecipient permission enforces recipient-only access
+- NotificationTemplateViewSet is admin-only (IsAdmin permission)
+- NotificationPreference unique_together on (user, notification_type)
+- IsNotificationRecipient permission enforces recipient-only access
 """
 import pytest
 from django.urls import reverse
@@ -74,10 +74,10 @@ def user_notification(dev_user):
     )
 
 
-# ─── H-1: NotificationTemplateViewSet is admin-only ───
+# ─── NotificationTemplateViewSet is admin-only ───
 
 class TestTemplateAdminOnly:
-    """H-1: only ADMIN role can list/retrieve notification templates."""
+    """Only ADMIN role can list/retrieve notification templates."""
 
     def test_admin_can_list_templates(self, api_client, admin_user, template):
         api_client.force_authenticate(user=admin_user)
@@ -115,10 +115,10 @@ class TestTemplateAdminOnly:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
-# ─── M-1: NotificationPreference uniqueness ───
+# ─── NotificationPreference uniqueness ───
 
 class TestPreferenceUniqueness:
-    """M-1: UniqueConstraint on (user, notification_type) is enforced."""
+    """UniqueConstraint on (user, notification_type) is enforced."""
 
     def test_preference_unique_constraint_enforced(self, dev_user):
         NotificationPreference.objects.create(
@@ -161,10 +161,10 @@ class TestPreferenceUniqueness:
         assert NotificationPreference.objects.filter(notification_type=n_type).count() == 2
 
 
-# ─── M-2: IsNotificationRecipient defense-in-depth ───
+# ─── IsNotificationRecipient defense-in-depth ───
 
 class TestIsNotificationRecipientPermission:
-    """M-2: only the notification recipient can access it."""
+    """Only the notification recipient can access it."""
 
     def test_recipient_can_access_own_notification(
         self, api_client, user_notification, dev_user,

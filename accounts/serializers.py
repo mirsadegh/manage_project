@@ -143,12 +143,11 @@ class UserRegistrationSerializer(PasswordPairMixin, serializers.ModelSerializer)
     password = password_field()
     password_confirm = password_field()
 
-    # PR-4 L-1: drop the model's auto-added UniqueValidator on both
-    # email and username; the generic message prevents enumeration.
-    # Uniqueness is re-checked in validate_email/validate_username below
-    # and in the DB constraint (create() catches IntegrityError).
+    # Drop the model's auto-added UniqueValidator on both email and
+    # username; the generic message prevents enumeration. Uniqueness is
+    # re-checked in validate_email/validate_username below and in the DB
+    # constraint (create() catches IntegrityError).
     email = serializers.EmailField(
-        required=True, allow_blank=False,
         error_messages={
             'required': 'Registration failed. Please try again.',
             'blank': 'Registration failed. Please try again.',

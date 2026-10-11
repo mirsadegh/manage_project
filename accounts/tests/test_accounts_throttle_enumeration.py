@@ -1,12 +1,12 @@
 """
-PR-4 Commit 2 regression tests.
+Regression tests for commit 2.
 
 Covers:
-  M-1: registration throttle (5/hour via ScopedRateThrottle)
-  M-2: password-reset throttle_classes now wired
-  M-3: SMTP failure no longer raises (enumeration oracle closed)
-  L-1: generic registration error message
-  L-2: registration auto-login (returns access + refresh tokens)
+  - registration throttle (5/hour via ScopedRateThrottle)
+  - password-reset throttle_classes now wired
+  - SMTP failure no longer raises (enumeration oracle closed)
+  - generic registration error message
+  - registration auto-login (returns access + refresh tokens)
 """
 import logging
 import uuid
@@ -26,7 +26,7 @@ User = get_user_model()
 
 @pytest.fixture
 def anon_client():
-    # CookieJWTAuthentication (PR-6) reads the `ws_access` HttpOnly cookie.
+    # CookieJWTAuthentication () reads the `ws_access` HttpOnly cookie.
     # The test client persists cookies across calls by default, so the 2nd
     # registration request would arrive carrying the cookies set by the 1st
     # request's response and be (incorrectly) authenticated as user #1 —
@@ -66,7 +66,7 @@ class _ThrottleScopeOverride:
     ScopedRateThrottle caches the THROTTLE_RATES dict reference at class
     definition time. override_settings updates api_settings but does NOT
     update the class attribute. This patches the class attribute directly
-    so throttle tests can run with custom rates.
+    # so throttle tests can run with custom rates.
     """
 
     def __init__(self, **scope_rates):
@@ -87,13 +87,13 @@ class _ThrottleScopeOverride:
 
 
 # ---------------------------------------------------------------------------
-# M-1: registration throttle
+# Registration throttle
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures('locmem_cache')
 def test_registration_throttled_after_5_requests(anon_client):
-    """M-1: 6th registration in the window is 429 Too Many Requests."""
+    """6th registration in the window is 429 Too Many Requests."""
     with _ThrottleScopeOverride(registration='5/hour'):
         url = reverse('register')
         for i in range(5):
@@ -105,7 +105,7 @@ def test_registration_throttled_after_5_requests(anon_client):
                 'first_name': 'Rate',
                 'last_name': f'User{i}',
             }
-            # PR-6: clear any cookies set by the previous request so
+            # Clear any cookies set by the previous request so
             # CookieJWTAuthentication doesn't authenticate this one as
             # the previously-registered user (which would put each
             # request in its own throttle bucket and defeat the
@@ -125,7 +125,7 @@ def test_registration_throttled_after_5_requests(anon_client):
             'first_name': 'Rate',
             'last_name': 'User99',
         }
-        # PR-6: same reason — clear cookies so the 6th request arrives
+        # Same reason — clear cookies so the 6th request arrives
         # anonymous (matching the throttle's intended bucket for an
         # unauthenticated registration).
         _clear_cookies(anon_client)
@@ -136,19 +136,19 @@ def test_registration_throttled_after_5_requests(anon_client):
 
 
 # ---------------------------------------------------------------------------
-# M-2: password-reset throttle
+# Password-reset throttle
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures('locmem_cache')
 def test_password_reset_throttled_after_5_requests(anon_client):
-    """M-2: 6th password-reset request in the window is 429."""
+    """6th password-reset request in the window is 429."""
     with _ThrottleScopeOverride(password_reset='5/hour'):
         url = reverse('password_reset_request')
         payload = {'email': 'someone@example.com'}
 
         for i in range(5):
-            # PR-6: clear cookies so CookieJWTAuthentication doesn't
+            # Clear cookies so CookieJWTAuthentication doesn't
             # authenticate this request as someone previously registered
             # in the test session.
             _clear_cookies(anon_client)
@@ -165,7 +165,7 @@ def test_password_reset_throttled_after_5_requests(anon_client):
 
 
 # ---------------------------------------------------------------------------
-# M-1 + M-2: scopes are independent
+# Registration and password-reset throttle scopes are independent
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
@@ -186,7 +186,7 @@ def test_throttle_scopes_are_independent(anon_client):
                 'first_name': 'Ind',
                 'last_name': f'Reg{i}',
             }
-            # PR-6: clear cookies so each registration request is
+            # Clear cookies so each registration request is
             # anonymous (otherwise the 2nd request would be
             # authenticated as the user from the 1st response and use
             # a different throttle bucket).
@@ -212,12 +212,12 @@ def test_throttle_scopes_are_independent(anon_client):
 
 
 # ---------------------------------------------------------------------------
-# M-3: SMTP enumeration oracle closed
+# SMTP enumeration oracle closed
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_password_reset_returns_200_for_nonexistent_email(anon_client):
-    """M-3: non-existent email still gets the generic 200 (no leak)."""
+    """Non-existent email still gets the generic 200 (no leak)."""
     url = reverse('password_reset_request')
     response = anon_client.post(
         url, {'email': 'nobody-here@example.com'}, format='json',
@@ -230,7 +230,7 @@ def test_password_reset_returns_200_for_nonexistent_email(anon_client):
 
 @pytest.mark.django_db
 def test_password_reset_always_returns_200_on_smtp_failure(anon_client):
-    """M-3: SMTP raise → 200 (NOT 500). The oracle is closed."""
+    """SMTP raise → 200 (NOT 500). The oracle is closed."""
     User.objects.create_user(
         username='existing', email='exists@example.com', password='Test123!',
     )
@@ -250,7 +250,7 @@ def test_password_reset_always_returns_200_on_smtp_failure(anon_client):
 
 @pytest.mark.django_db
 def test_password_reset_smtp_failure_is_logged(anon_client, caplog):
-    """M-3: SMTP failure is logged via logger.exception."""
+    """SMTP failure is logged via logger.exception."""
     User.objects.create_user(
         username='logger_user', email='logger@example.com', password='Test123!',
     )
@@ -274,12 +274,12 @@ def test_password_reset_smtp_failure_is_logged(anon_client, caplog):
 
 
 # ---------------------------------------------------------------------------
-# L-1: generic registration error
+# Generic registration error
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_registration_duplicate_email_returns_generic_message(anon_client):
-    """L-1: duplicate email returns the generic message, not 'already exists'."""
+    """Duplicate email returns the generic message, not 'already exists'."""
     User.objects.create_user(
         username='existing_user', email='dup@example.com', password='Test123!',
     )
@@ -303,7 +303,7 @@ def test_registration_duplicate_email_returns_generic_message(anon_client):
 
 @pytest.mark.django_db
 def test_registration_duplicate_username_returns_generic_message(anon_client):
-    """L-1: duplicate username also returns the generic message."""
+    """Duplicate username also returns the generic message."""
     User.objects.create_user(
         username='taken', email='taken@example.com', password='Test123!',
     )
@@ -325,14 +325,14 @@ def test_registration_duplicate_username_returns_generic_message(anon_client):
 
 
 # ---------------------------------------------------------------------------
-# L-2: auto-login (returns access + refresh tokens)
+# Auto-login (returns access + refresh tokens)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
 def test_registration_returns_tokens(anon_client):
-    """L-2 (intentional): successful registration auto-logs-in the user
+    """Successful registration auto-logs-in the user
     via HttpOnly cookies. The JWT tokens themselves are NOT in the JSON
-    body unless RETURN_TOKENS_IN_BODY is enabled (M-2)."""
+    body unless RETURN_TOKENS_IN_BODY is enabled."""
     from django.conf import settings
     from config.auth_cookies import ACCESS_COOKIE, REFRESH_COOKIE
 
@@ -348,11 +348,11 @@ def test_registration_returns_tokens(anon_client):
     assert response.status_code == status.HTTP_201_CREATED, response.content
     assert 'user' in response.data
     assert response.data['user']['username'] == 'autologin_user'
-    # L-2: registration must still auto-authenticate -- the tokens are
+    # registration must still auto-authenticate -- the tokens are
     # in the Set-Cookie headers regardless of the body flag.
     assert ACCESS_COOKIE in response.cookies
     assert REFRESH_COOKIE in response.cookies
-    # M-2: body tokens only when explicitly enabled.
+    # Body tokens only when explicitly enabled.
     if settings.RETURN_TOKENS_IN_BODY:
         assert 'tokens' in response.data
         assert 'access' in response.data['tokens']

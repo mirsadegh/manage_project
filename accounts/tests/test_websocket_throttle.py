@@ -1,5 +1,5 @@
 """
-PR-3 Commit 2 regression tests.
+Commit 2 regression tests.
 
 Covers:
   #4 Query-string token deprecation

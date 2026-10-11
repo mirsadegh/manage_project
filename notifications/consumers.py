@@ -47,16 +47,16 @@ class BaseConsumer(AsyncWebsocketConsumer):
         await self.send_json(response)
 
     def get_client_ip(self):
-        """Extract client IP from scope, using trusted-proxy resolver
-        (PR-3 Fix #2) so X-Forwarded-For is only honored behind known proxies.
+        """Extract client IP from scope, using trusted-proxy resolver so X-Forwarded-For is only honored
+        behind known proxies.
         """
         from config.proxies import get_client_ip
         return get_client_ip(self.scope)
 
-    # --- PR-3 Fix #10: idle-timeout helpers ---
+    # --- idle-timeout helpers ---
     async def _ws_idle_watchdog(self):
         """Background task: close the connection after CONNECTION_TIMEOUT
-        of no inbound activity. Touched (re-armed) on every received message.
+        # of no inbound activity. Touched (re-armed) on every received message.
         """
         import asyncio
         try:
@@ -88,7 +88,7 @@ class BaseConsumer(AsyncWebsocketConsumer):
         """Reset the idle timer. Call at the top of every receive() handler.
 
         Implementation: cancel the existing watchdog and spawn a new one
-        with a fresh sleep. Simpler than carrying a wake-up event.
+        # with a fresh sleep. Simpler than carrying a wake-up event.
         """
         self._ws_cancel_idle_watchdog()
         self._ws_start_idle_watchdog()
@@ -134,7 +134,7 @@ class NotificationConsumer(BaseConsumer):
             )
             await self.close(code=4001)
             return
-        # PR-3 Fix #3: per-user connection cap.
+        # per-user connection cap.
         if not await self._check_user_connection_cap():
             logger.warning(
                 f"User {self.user.username} exceeded per-user WS connection cap"
@@ -144,7 +144,7 @@ class NotificationConsumer(BaseConsumer):
 
         # Setup user's notification group
         self.group_name = f'user_{self.user.id}_notifications'
-        # PR-3 Fix #1: control group for forced disconnect (token blacklist).
+        # control group for forced disconnect (token blacklist).
         self.control_group = f'user_{self.user.id}_ws_control'
         self.connected_at = timezone.now()
 
@@ -159,12 +159,12 @@ class NotificationConsumer(BaseConsumer):
             self.channel_name
         )
 
-        # PR-3 Fix #6: per-connection inbound rate limit.
+        # per-connection inbound rate limit.
         from config.websocket_throttle import _TokenBucket, DEFAULT_LIMIT_PER_SECOND, EXPENSIVE_LIMIT_PER_SECOND
         self._ws_default_bucket = _TokenBucket(DEFAULT_LIMIT_PER_SECOND)
         self._ws_expensive_bucket = _TokenBucket(EXPENSIVE_LIMIT_PER_SECOND)
 
-        # PR-3 Fix #10: start the idle-timeout watchdog.
+        # start the idle-timeout watchdog.
         self._ws_start_idle_watchdog()
 
         # Track connection
@@ -198,19 +198,19 @@ class NotificationConsumer(BaseConsumer):
                 self.group_name,
                 self.channel_name
             )
-        # PR-3 Fix #1: leave the control group too.
+        # leave the control group too.
         if hasattr(self, 'control_group') and self.control_group:
             await self.channel_layer.group_discard(
                 self.control_group,
                 self.channel_name
             )
 
-        # PR-3 Fix #10: stop the idle-timeout watchdog.
+        # stop the idle-timeout watchdog.
         self._ws_cancel_idle_watchdog()
 
         if hasattr(self, 'user') and self.user and self.user.is_authenticated:
             await self._track_connection(connected=False)
-            # PR-3 Fix #3: decrement per-user cap counter.
+            # decrement per-user cap counter.
             await self._release_user_connection_cap()
 
             connected_at = getattr(self, 'connected_at', None)
@@ -224,16 +224,16 @@ class NotificationConsumer(BaseConsumer):
             )
 
     async def force_disconnect(self, event):
-        """PR-3 Fix #1: server-initiated close on token blacklist."""
+        """server-initiated close on token blacklist."""
         reason = event.get('reason', 'force_disconnect')
         logger.info(f"Force-disconnecting notification WS for user {self.user.id}: {reason}")
         await self.close(code=4001)
     
     async def receive(self, text_data):
         """Handle messages received from WebSocket client."""
-        # PR-3 Fix #10: any inbound message resets the idle-timeout clock.
+        # any inbound message resets the idle-timeout clock.
         self._ws_touch_activity()
-        # PR-3 Fix #12: enforce MAX_MESSAGE_SIZE at the consumer layer
+        # enforce MAX_MESSAGE_SIZE at the consumer layer
         # before parsing. daphne already caps at 1 MiB; this is a tighter
         # cap to bound JSON parse cost and downstream broadcast size.
         from django.conf import settings as _dj_settings
@@ -254,7 +254,7 @@ class NotificationConsumer(BaseConsumer):
 
         message_type = data.get('type', '')
 
-        # PR-3 Fix #6: rate-limit inbound messages.
+        # rate-limit inbound messages.
         from config.websocket_throttle import ThrottledConsumer, expensive
         # Determine bucket: expensive handler vs default.
         handler_for_type = {
@@ -410,7 +410,7 @@ class NotificationConsumer(BaseConsumer):
         """Handle new notification event from channel layer."""
         notification = event.get('notification', {})
 
-        # PR-3 Fix #16: defensive recipient check. If a producer
+        # defensive recipient check. If a producer
         # dispatches to the wrong user's group, the consumer must
         # drop the message instead of leaking it.
         recipient_id = (
@@ -567,7 +567,7 @@ class NotificationConsumer(BaseConsumer):
 
     @database_sync_to_async
     def _check_user_connection_cap(self):
-        """PR-3 Fix #3: increment a per-user counter; return False if at cap."""
+        """increment a per-user counter; return False if at cap."""
         from django.conf import settings
         cap = getattr(settings, 'MAX_CONNECTIONS_PER_USER', 5)
         cache_key = f"ws_user_{self.user.id}_connections"
@@ -579,7 +579,7 @@ class NotificationConsumer(BaseConsumer):
 
     @database_sync_to_async
     def _release_user_connection_cap(self):
-        """PR-3 Fix #3: decrement the per-user cap counter on disconnect."""
+        """decrement the per-user cap counter on disconnect."""
         cache_key = f"ws_user_{self.user.id}_connections"
         current = cache.get(cache_key, 0)
         cache.set(cache_key, max(0, current - 1), 3600)

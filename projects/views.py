@@ -94,7 +94,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         else:
             qs = base_qs
 
-        # H-3: Optimize N+1 queries in project list serializer.
+        # Optimize N+1 queries in project list serializer.
         # Annotate counts instead of calling property methods per-instance.
         # Only needed for list action (uses ProjectSerializer with count fields).
         if self.action == 'list':
@@ -187,7 +187,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             )
 
         if existing and not existing.is_active:
-            # H-1: a user who has left the project cannot be re-added
+            # a user who has left the project cannot be re-added
             return Response(
                 {'error': 'This user has left the project and cannot be re-added'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -229,7 +229,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def remove_member(self, request, slug=None, member_id=None):
         """Remove member from project"""
         project = self.get_object()
-        # M-1: only active members can be removed; inactive ones return 404
+        # only active members can be removed; inactive ones return 404
         try:
             member = project.members.get(id=member_id, is_active=True)
         except ProjectMember.DoesNotExist:

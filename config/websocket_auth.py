@@ -66,9 +66,8 @@ def get_user_from_token(token_string):
                 return TokenValidationResult(user=user, is_valid=True)
             except CustomUser.DoesNotExist:
                 cache.delete(cache_key)
-                # PR-3 Fix #1: prune from per-user set so invalidate doesn't
-                # try to delete a key that's already gone.
-                _untrack_token_for_user(cached_user_id, cache_key)
+                # Prune from per-user set so invalidate doesn't try to
+                # delete a key that's already gone.
 
         # 3. User lookup using the already-decoded token
         user_id = access_token.get("user_id")
@@ -112,8 +111,8 @@ def get_user_from_token(token_string):
         logger.warning("WebSocket result-cache write failed for jti=%s: %s", (jti or "")[:8], e)
         return TokenValidationResult(user=user, is_valid=True)
 
-    # PR-3 Fix #1: track this cache key under the user so a blacklist
-    # can flush all of this user's cached tokens in one shot.
+    # Track this cache key under the user so a blacklist can flush all
+    # of this user's cached tokens in one shot.
     try:
         _track_token_for_user(user_id, cache_key, int(cache_ttl))
     except Exception as e:
@@ -126,9 +125,9 @@ def get_user_from_token(token_string):
 def invalidate_user_token_cache(user_id):
     """Invalidate cached tokens for a user.
 
-    PR-3 Fix #1: scan the per-user set of token cache keys and delete
-    each, so that a blacklisted token can't be served from cache for
-    up to the (previously unbounded) cache TTL.
+    Scan the per-user set of token cache keys and delete each, so that a
+    blacklisted token can't be served from cache for up to the
+    (previously unbounded) cache TTL.
     """
     set_key = f"ws_user_tokens_{user_id}"
     token_keys = cache.get(set_key) or []
@@ -204,7 +203,7 @@ class JWTAuthMiddleware(BaseMiddleware):
             scope['auth_error'] = validation_result.error
             
             if not self.ALLOW_ANONYMOUS:
-                # PR-3 Fix #13: collapse all auth-failure reasons into a
+                # Collapse all auth-failure reasons into a single
                 # single generic string sent to the client. Detailed
                 # reasons (expired/revoked/inactive/invalid) leak token
                 # state to attackers and are logged server-side only.
@@ -231,7 +230,7 @@ class JWTAuthMiddleware(BaseMiddleware):
     def _extract_token(self, scope):
         """Extract JWT token from the WebSocket upgrade request.
 
-        Lookup order (PR-6):
+        Lookup order:
           1. HttpOnly `ws_access` cookie (preferred). The browser
              attaches this automatically on the upgrade request when
              the WS endpoint is same-origin as the frontend (which is
@@ -243,14 +242,13 @@ class JWTAuthMiddleware(BaseMiddleware):
              tools. Emits a warning on every connection so callers
              notice.
 
-        PR-3 Fix #14: the Sec-WebSocket-Protocol JWT method was REMOVED.
-        Browsers echo the chosen subprotocol back to JS, which leaks
-        the JWT.
+        The Sec-WebSocket-Protocol JWT method was REMOVED. Browsers
+        echo the chosen subprotocol back to JS, which leaks the JWT.
         """
         token = None
         source = None  # which method yielded the token
 
-        # Method 1: HttpOnly cookie (PR-6, preferred).
+        # Method 1: HttpOnly cookie (preferred).
         cookie_value = get_cookie(scope.get('headers', []), ACCESS_COOKIE)
         if cookie_value:
             token = cookie_value
@@ -290,7 +288,7 @@ class JWTAuthMiddleware(BaseMiddleware):
     
     def _get_client_ip(self, scope):
         """Extract client IP from scope, honoring X-Forwarded-For only
-        when the immediate peer is a trusted proxy (PR-3 Fix #2).
+        when the immediate peer is a trusted proxy.
         """
         from .proxies import get_client_ip as _resolve_ip
         return _resolve_ip(scope)

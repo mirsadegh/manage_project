@@ -1,12 +1,12 @@
 # notifications/tests/test_notification_final.py
 """
-Regression tests for PR-5 Commit 3: low-priority hardening.
+Regression tests for commit 3: low-priority hardening.
 
 Covers:
-- L-1: Notification.mark_as_read is atomic and idempotent.
-- L-2: NotificationViewSet has throttle_scope='notification_read'
-       and the rate is configured in production settings.
-- L-3: send_notification_async Celery task has SECURITY docstring.
+- Notification.mark_as_read is atomic and idempotent.
+- NotificationViewSet has throttle_scope='notification_read' and the
+  rate is configured in production settings.
+- send_notification_async Celery task has SECURITY docstring.
 """
 import pytest
 from django.conf import settings
@@ -49,10 +49,10 @@ def unread_notification(recipient):
     )
 
 
-# ─── L-1: atomic mark_as_read ───
+# ─── atomic mark_as_read ───
 
 class TestAtomicMarkAsRead:
-    """L-1: mark_as_read is atomic and idempotent."""
+    """mark_as_read is atomic and idempotent."""
 
     def test_mark_as_read_returns_true_when_newly_read(self, unread_notification):
         assert unread_notification.is_read is False
@@ -88,10 +88,10 @@ class TestAtomicMarkAsRead:
         assert unread_notification.is_read is True
 
 
-# ─── L-2: rate limiting configuration ───
+# ─── rate limiting configuration ───
 
 class TestRateLimitingConfiguration:
-    """L-2: throttle_scope is set and the rate is configured."""
+    """throttle_scope is set and the rate is configured."""
 
     def test_notification_read_throttle_scope_configured(self):
         from notifications.views import NotificationViewSet
@@ -120,10 +120,10 @@ class TestRateLimitingConfiguration:
         assert rates['notification_read'] != '100/min'
 
 
-# ─── L-3: documentation presence ───
+# ─── documentation presence ───
 
 class TestSecurityDocumentation:
-    """L-3: SECURITY warnings on dangerous code paths."""
+    """SECURITY warnings on dangerous code paths."""
 
     def test_send_notification_async_has_security_docstring(self):
         from notifications import tasks

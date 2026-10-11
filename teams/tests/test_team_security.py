@@ -1,11 +1,11 @@
 # teams/tests/test_team_security.py
 """
-Regression tests for PR-4 Commit 5 security fixes.
+Regression tests for security fixes.
 
 Covers:
-- TM-1: TeamViewSet.assign_project verifies caller has project access
-- TM-2: TeamViewSet.schedule_meeting validates attendees are team members
-- TM-4: Team.remove_member soft-deletes (is_active=False + left_at=now())
+- TeamViewSet.assign_project verifies caller has project access
+- TeamViewSet.schedule_meeting validates attendees are team members
+- Team.remove_member soft-deletes (is_active=False + left_at=now())
 """
 import pytest
 from django.urls import reverse
@@ -71,10 +71,10 @@ def project(leader):
     )
 
 
-# ─── TM-1: assign_project requires project access ───
+# ─── Tassign_project requires project access ───
 
 class TestAssignProjectAccess:
-    """TM-1: only callers with project access can assign the project to a team."""
+    """: only callers with project access can assign the project to a team."""
 
     def test_assign_project_requires_project_access(self, api_client, team, outsider):
         TeamMembership.objects.create(
@@ -153,10 +153,10 @@ class TestAssignProjectAccess:
         assert response.status_code == status.HTTP_201_CREATED
 
 
-# ─── TM-2: schedule_meeting validates attendees ───
+# ─── Tschedule_meeting validates attendees ───
 
 class TestScheduleMeetingValidation:
-    """TM-2: only active team members may be invited to a meeting."""
+    """: only active team members may be invited to a meeting."""
 
     def _meeting_data(self, **extra):
         data = {
@@ -219,10 +219,10 @@ class TestScheduleMeetingValidation:
         assert response.status_code == status.HTTP_201_CREATED
 
 
-# ─── TM-4: remove_member soft-delete ───
+# ─── Tremove_member soft-delete ───
 
 class TestRemoveMemberSoftDelete:
-    """TM-4: remove_member soft-deletes (preserves history)."""
+    """: remove_member soft-deletes (preserves history)."""
 
     def test_remove_member_soft_deletes(self, team, member):
         membership = TeamMembership.objects.create(

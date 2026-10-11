@@ -12,7 +12,7 @@ auth channel for WebSocket connections because:
   * Server-side `Secure` flag is applied in production (`DEBUG=False`)
     so cookies are never sent over plain HTTP.
 
-Migration note (PR-6):
+Migration note:
   The token-issuance endpoints (login, register, refresh) now also set
   these cookies. The token body is still returned in the JSON response
   so existing tools and tests that read the body continue to work.

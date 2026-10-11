@@ -1,7 +1,7 @@
 # config/proxies.py
 
 """
-PR-3 Fix #2: trusted-proxy allowlist for X-Forwarded-For.
+Trusted-proxy allowlist for X-Forwarded-For.
 
 Only honor the X-Forwarded-For / X-Real-IP headers when the immediate
 peer (scope['client']) is in settings.TRUSTED_PROXY_CIDRS. Otherwise
