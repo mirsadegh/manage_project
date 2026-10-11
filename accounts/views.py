@@ -554,7 +554,6 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save()
         return Response({'message': f'User {user.username} activated successfully'})
 
-
 @method_decorator(ensure_csrf_cookie, name='post')
 class CookieTokenRefreshView(TokenRefreshView):
     """
@@ -573,47 +572,49 @@ class CookieTokenRefreshView(TokenRefreshView):
     # (the default TokenRefreshView is permission_classes=()).
     authentication_classes = []
 
-    def post(self, request, *args, **kwargs):
-        # If the JSON body has no `refresh`, fall back to the cookie.
-        # We do this by wrapping the request in a fresh Request whose
-        # body contains the cookie-derived refresh token. This avoids
-        # mutating the cached `_full_data` on the original request,
-        # which Django REST Framework may have already parsed.
-        from rest_framework.request import Request
-        from rest_framework.parsers import JSONParser
+    def _get_refresh_data(self, request):
+        """Return refresh token data for the serializer.
 
-        body_refresh = None
+        - If request.data contains a truthy 'refresh' field, return request.data.
+        - If request.data has no truthy 'refresh' and request.COOKIES contains
+          'ws_refresh', return {'refresh': cookie_refresh}.
+        - Otherwise return request.data (empty or with non-refresh fields).
+        """
         try:
-            body_refresh = request.data.get('refresh') if hasattr(request.data, 'get') else None
+            if request.data.get('refresh'):
+                return request.data
         except Exception:
-            body_refresh = None
+            pass
 
-        if not body_refresh:
-            cookie_refresh = request.COOKIES.get('ws_refresh')
-            if cookie_refresh:
-                # Rebuild the request body with the cookie value.
-                # TokenRefreshView's serializer reads `refresh` from
-                # validated input; this gives it the cookie-derived
-                # value while leaving the original request untouched.
-                rebuilt = Request(
-                    request._request,
-                    parsers=[JSONParser()],
-                )
-                rebuilt._data = {'refresh': cookie_refresh}
-                rebuilt._files = {}
-                rebuilt._full_data = {'refresh': cookie_refresh}
-                request = rebuilt
+        cookie_refresh = request.COOKIES.get(REFRESH_COOKIE)
+        if cookie_refresh:
+            return {'refresh': cookie_refresh}
 
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == status.HTTP_200_OK and 'access' in response.data:
+        return request.data
+
+    def post(self, request, *args, **kwargs):
+        data = self._get_refresh_data(request)
+        serializer = self.get_serializer(data=data)
+
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+        if 'access' in response.data:
             set_auth_cookies(
                 response,
                 access=response.data.get('access'),
                 refresh=response.data.get('refresh'),
             )
-            # M-2: same suppression as CustomTokenObtainPairView -- tokens
-            # stay in cookies unless RETURN_TOKENS_IN_BODY is set.
+
             if not settings.RETURN_TOKENS_IN_BODY:
                 response.data.pop('access', None)
                 response.data.pop('refresh', None)
+
         return response
